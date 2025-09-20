@@ -1,18 +1,5 @@
 """Answer generator submodule for RAG pipeline."""
 
-from typing import List, Dict, Any, Optional
-import openai
-from langchain.llms import OpenAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
-
-from ..shared.config import settings
-from ..shared.logging import setup_logging
-
-logger = setup_logging("rag-generator")
-
-
-"""Answer generator submodule for RAG pipeline."""
 
 from typing import List, Dict, Any, Optional
 import openai
