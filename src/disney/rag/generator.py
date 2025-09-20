@@ -12,10 +12,24 @@ from ..shared.logging import setup_logging
 logger = setup_logging("rag-generator")
 
 
+"""Answer generator submodule for RAG pipeline."""
+
+from typing import List, Dict, Any, Optional
+import openai
+from langchain_openai import ChatOpenAI  # Updated import
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+
+from ..shared.config import settings
+from ..shared.logging import setup_logging
+
+logger = setup_logging("rag-generator")
+
+
 class AnswerGenerator:
     """Answer generator using LLM with retrieved context."""
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         """Initialize the answer generator.
         
         Args:
@@ -28,6 +42,7 @@ class AnswerGenerator:
         self.llm = None
         self.prompt_template = None
         self.llm_chain = None
+        self.model_name = model_name or settings.model_name
         self._initialize_llm()
     
     def _initialize_llm(self):
@@ -36,11 +51,12 @@ class AnswerGenerator:
             # Set OpenAI API key
             openai.api_key = self.api_key
             
-            # Initialize LangChain LLM
-            self.llm = OpenAI(
+            # Initialize LangChain ChatOpenAI (updated)
+            self.llm = ChatOpenAI(
                 openai_api_key=self.api_key,
                 temperature=0.7,
-                max_tokens=1000
+                max_tokens=1000,
+                model_name = self.model_name
             )
             
             # Create prompt template

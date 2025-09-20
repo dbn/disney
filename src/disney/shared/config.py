@@ -2,8 +2,9 @@
 
 import os
 from typing import Optional
-from pydantic import  Field
+from pydantic import Field
 from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -13,7 +14,11 @@ class Settings(BaseSettings):
         default="http://localhost:8001",
         env="CONTEXT_SERVICE_URL"
     )
-    
+    model_name: str = Field(
+        default="4o-mini",
+        env="MODEL_NAME"
+    )
+
     # API Keys
     openai_api_key: Optional[str] = Field(
         default=None,

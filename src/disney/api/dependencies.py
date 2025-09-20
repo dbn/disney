@@ -9,7 +9,7 @@ from ..shared.logging import setup_logging
 logger = setup_logging("customer-experience-api")
 
 
-def get_http_client() -> Generator[httpx.AsyncClient, None, None]:
+async def get_http_client() -> Generator[httpx.AsyncClient, None, None]:
     """Get HTTP client for external service communication."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         yield client
