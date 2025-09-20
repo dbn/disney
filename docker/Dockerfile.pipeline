@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+COPY scripts/ ./scripts/
+
+# Install uv
+RUN pip install uv
+
+# Install dependencies
+RUN uv sync --extra pipeline --frozen
+
+# Run the pipeline
+CMD ["uv", "run", "--extra", "pipeline", "python", "scripts/run_pipeline.py"]

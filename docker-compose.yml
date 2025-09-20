@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Customer Experience Assessment Service
+  customer-experience-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - CONTEXT_SERVICE_URL=http://context-service:8001
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LOG_LEVEL=INFO
+    depends_on:
+      - context-service
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    restart: unless-stopped
+
+  # Context Retrieval Service
+  context-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.context
+    ports:
+      - "8001:8001"
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - LOG_LEVEL=INFO
+    volumes:
+      - chroma_data:/app/data
+      - ./src:/app/src
+    depends_on:
+      - chromadb
+    restart: unless-stopped
+
+  # ChromaDB
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8002:8000"
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    volumes:
+      - chroma_data:/chroma/chroma
+    restart: unless-stopped
+
+  # Data Pipeline (optional)
+  data-pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pipeline
+    environment:
+      - CONTEXT_SERVICE_URL=http://context-service:8001
+      - DATA_PATH=/app/data/DisneylandReviews.csv
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    depends_on:
+      - context-service
+    restart: "no"
+
+  # Jupyter Notebook (development)
+  jupyter:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.notebook
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-disney}
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./data:/app/data
+      - ./src:/app/src
+    restart: unless-stopped
+
+volumes:
+  chroma_data:

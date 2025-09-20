@@ -1,0 +1,335 @@
+# Project Structure Plan - Disney AI Customer Review Analysis
+
+## Overview
+Project structure plan for the Disney AI Customer Review Analysis system using `uv` for dependency management, with modular components for FastAPI services, RAG functionality, data pipeline, and experimentation.
+
+## Directory Structure
+
+```
+disney/
+├── pyproject.toml                 # Main project configuration with uv
+├── uv.lock                       # Lock file for reproducible builds
+├── README.md                     # Project documentation
+├── .env.example                  # Environment variables template
+├── .gitignore                    # Git ignore rules
+├── docker-compose.yml            # Docker Compose for all services
+├── Dockerfile                    # Main application Dockerfile
+├── data/
+│   └── DisneylandReviews.csv     # Disney reviews dataset
+├── notebooks/
+│   └── data_exploration.ipynb    # Jupyter notebook for experimentation
+├── src/
+│   └── disney/
+│       ├── __init__.py
+│       ├── api/                  # Customer Experience Assessment Service
+│       │   ├── __init__.py
+│       │   ├── main.py          # FastAPI application
+│       │   ├── models.py        # Pydantic models
+│       │   ├── routes.py        # API routes
+│       │   └── dependencies.py  # Dependency injection
+│       ├── context_service/      # Context Retrieval Service
+│       │   ├── __init__.py
+│       │   ├── main.py          # FastAPI application
+│       │   ├── models.py        # Pydantic models
+│       │   ├── routes.py        # API routes
+│       │   ├── vector_db.py     # ChromaDB operations
+│       │   ├── indexing.py      # Data indexing logic
+│       │   └── search.py        # Vector search logic
+│       ├── rag/                  # RAG components (shared)
+│       │   ├── __init__.py
+│       │   ├── embedder.py      # Text embedding module
+│       │   ├── retrieval.py     # RAG retrieval submodule
+│       │   └── generator.py     # Answer generator submodule
+│       ├── pipeline/             # Data pipeline
+│       │   ├── __init__.py
+│       │   ├── ingest.py        # Data ingestion logic
+│       │   ├── scheduler.py     # Periodic scheduling
+│       │   └── processors.py    # Data processing utilities
+│       └── shared/               # Shared utilities
+│           ├── __init__.py
+│           ├── config.py        # Configuration management
+│           ├── logging.py       # Logging setup
+│           └── utils.py         # Common utilities
+├── scripts/
+│   ├── run_pipeline.py          # Pipeline runner script
+│   ├── setup_dev.py             # Development environment setup
+│   └── migrate_data.py          # Data migration utilities
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py              # Pytest configuration
+│   ├── test_api/                # API service tests
+│   │   ├── __init__.py
+│   │   ├── test_main.py
+│   │   └── test_routes.py
+│   ├── test_context_service/    # Context service tests
+│   │   ├── __init__.py
+│   │   ├── test_vector_db.py
+│   │   └── test_search.py
+│   ├── test_rag/                # RAG component tests
+│   │   ├── __init__.py
+│   │   ├── test_embedder.py
+│   │   ├── test_retrieval.py
+│   │   └── test_generator.py
+│   └── test_pipeline/           # Pipeline tests
+│       ├── __init__.py
+│       └── test_ingest.py
+├── docker/
+│   ├── Dockerfile.api           # Customer Experience Service
+│   ├── Dockerfile.context       # Context Retrieval Service
+│   ├── Dockerfile.pipeline      # Data Pipeline
+│   └── Dockerfile.notebook      # Jupyter Notebook
+└── docs/
+    ├── api/                     # API documentation
+    ├── architecture/            # System architecture docs
+    └── deployment/              # Deployment guides
+```
+
+## uv Configuration Structure
+
+### Main pyproject.toml
+```toml
+[project]
+name = "disney"
+version = "0.1.0"
+description = "Disney AI-powered customer review analysis with FastAPI, LangChain, and RAG"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.3.2",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Customer Experience Assessment Service
+api = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "python-multipart>=0.0.6",
+    "httpx>=0.25.0",
+]
+
+# Context Retrieval Service
+context = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "chromadb>=0.4.22",
+    "sentence-transformers>=2.2.2",
+]
+
+# RAG Components (shared)
+rag = [
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.20",
+    "langchain-openai>=0.0.5",
+    "sentence-transformers>=2.2.2",
+    "openai>=1.0.0",
+]
+
+# Data Pipeline
+pipeline = [
+    "schedule>=1.2.0",
+    "pandas>=2.3.2",
+    "sqlalchemy>=2.0.23",
+    "psycopg2-binary>=2.9.9",
+]
+
+# Jupyter Notebook
+notebook = [
+    "jupyter>=1.0.0",
+    "jupyterlab>=4.0.0",
+    "ipykernel>=6.30.1",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "plotly>=5.17.0",
+]
+
+# Development
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.5.0",
+]
+
+# All dependencies
+all = [
+    "disney[api,context,rag,pipeline,notebook,dev]",
+]
+```
+
+## Service Architecture
+
+### Service Separation
+1. **Customer Experience Assessment Service** (`src/disney/api/`)
+   - Main user-facing FastAPI service
+   - Handles natural language queries
+   - Integrates with Context Retrieval Service
+   - Contains RAG components
+
+2. **Context Retrieval Service** (`src/disney/context_service/`)
+   - Standalone FastAPI service
+   - Manages ChromaDB vector database
+   - Provides vector search and indexing APIs
+   - Independent of main service
+
+3. **Data Pipeline** (`src/disney/pipeline/`)
+   - Periodic data ingestion
+   - Processes Disney reviews dataset
+   - Updates vector database
+   - Can run independently or scheduled
+
+4. **Shared RAG Components** (`src/disney/rag/`)
+   - Reusable across services
+   - Embedder, retrieval, and generator modules
+   - Common utilities and configurations
+
+## Docker Compose Structure
+
+### Services Configuration
+```yaml
+services:
+  # Customer Experience Assessment Service
+  customer-experience-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - CONTEXT_SERVICE_URL=http://context-service:8001
+    depends_on:
+      - context-service
+
+  # Context Retrieval Service
+  context-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.context
+    ports:
+      - "8001:8001"
+    volumes:
+      - chroma_data:/app/data
+    depends_on:
+      - chromadb
+
+  # ChromaDB
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8002:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
+  # Data Pipeline (optional)
+  data-pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.pipeline
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - context-service
+
+  # Jupyter Notebook (development)
+  jupyter:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./data:/app/data
+```
+
+## Development Workflow
+
+### Environment Setup
+```bash
+# Install all dependencies
+uv sync --all-extras
+
+# Install specific service dependencies
+uv sync --extra api          # Customer Experience Service
+uv sync --extra context      # Context Retrieval Service
+uv sync --extra rag          # RAG components
+uv sync --extra pipeline     # Data pipeline
+uv sync --extra notebook     # Jupyter notebook
+uv sync --extra dev          # Development tools
+```
+
+### Running Services
+```bash
+# Run Customer Experience Service
+uv run --extra api python -m src.disney.api.main
+
+# Run Context Retrieval Service
+uv run --extra context python -m src.disney.context_service.main
+
+# Run Data Pipeline
+uv run --extra pipeline python scripts/run_pipeline.py
+
+# Start Jupyter Notebook
+uv run --extra notebook jupyter lab
+```
+
+### Docker Development
+```bash
+# Start all services
+docker-compose up -d
+
+# Start specific services
+docker-compose up customer-experience-api context-service
+
+# View logs
+docker-compose logs -f customer-experience-api
+```
+
+## Testing Structure
+
+### Test Organization
+- **Unit Tests**: Individual component testing
+- **Integration Tests**: Service communication testing
+- **End-to-End Tests**: Full workflow testing
+- **Performance Tests**: Load and response time testing
+
+### Test Commands
+```bash
+# Run all tests
+uv run pytest
+
+# Run specific test categories
+uv run pytest tests/test_api/
+uv run pytest tests/test_context_service/
+uv run pytest tests/test_rag/
+
+# Run with coverage
+uv run pytest --cov=src/disney
+```
+
+## Configuration Management
+
+### Environment Variables
+- **Service URLs**: Inter-service communication
+- **API Keys**: OpenAI, database credentials
+- **Database Settings**: ChromaDB configuration
+- **Model Settings**: Embedding and LLM parameters
+
+### Configuration Files
+- **Shared Config**: `src/disney/shared/config.py`
+- **Service-Specific**: Each service has its own config
+- **Environment Templates**: `.env.example` for setup
+
+## Success Criteria
+1. All services can be started independently
+2. Docker Compose orchestrates all services correctly
+3. Dependencies are properly isolated using uv groups
+4. Services communicate via well-defined APIs
+5. Development workflow is smooth and efficient
+6. Testing covers all components and integrations
+7. Configuration is centralized and environment-aware

@@ -1,0 +1,95 @@
+[project]
+name = "disney"
+version = "0.1.0"
+description = "Disney AI-powered customer review analysis with FastAPI, LangChain, and RAG"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.3.2",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Customer Experience Assessment Service
+api = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "python-multipart>=0.0.6",
+    "httpx>=0.25.0",
+]
+
+# Context Retrieval Service
+context = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "chromadb>=0.4.22",
+    "sentence-transformers>=2.2.2",
+]
+
+# RAG Components (shared)
+rag = [
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.20",
+    "langchain-openai>=0.0.5",
+    "sentence-transformers>=2.2.2",
+    "openai>=1.0.0",
+]
+
+# Data Pipeline
+pipeline = [
+    "schedule>=1.2.0",
+    "pandas>=2.3.2",
+    "sqlalchemy>=2.0.23",
+    "psycopg2-binary>=2.9.9",
+]
+
+# Jupyter Notebook
+notebook = [
+    "jupyter>=1.0.0",
+    "jupyterlab>=4.0.0",
+    "ipykernel>=6.30.1",
+    "matplotlib>=3.8.0",
+    "seaborn>=0.13.0",
+    "plotly>=5.17.0",
+]
+
+# Development
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.5.0",
+]
+
+# All dependencies
+all = [
+    "disney[api,context,rag,pipeline,notebook,dev]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.5.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88

@@ -1,0 +1,37 @@
+
+Background: Disney wants to leverage AI to enable customer experience teams to query customer reviews in natural language. Your role is to design and implement a minimal, production-oriented prototype that demonstrates how this could work in practice. You are provided with a dataset of customer reviews about their parks.
+
+## Tasks
+
+### Customer Experience Assesment Service
+Create a FastAPI based service that:
+1. Allows user to submit a question, and get LLM result back.
+2. The main module should contain an Embedder 
+3. The main module should contain a RAG retrieval submodule.
+4. Answer generator
+
+### Context Retrieval Service
+Create a separate module that implements Context retrieval service based on FastAPI:
+5. Use ChromaDB as the vector database
+6. Expose API for Vector search operations
+7. Expose API for data indexing operations
+8. Should be a standalone service that can be consumed by the FastAPI service
+
+### Periodic Data Pipeline
+Create a periodic data pipeline that:
+9. Ingests data into the vector database
+10. Can be scheduled to run at regular intervals
+11. Processes the DisneylandReviews.csv dataset
+12. Updates the vector database with new or updated data
+
+### Jupyter Notebook for Experimentation
+13. Maintain a Jupyter notebook for data exploration and analysis
+14. Use the notebook for model experimentation and RAG pipeline testing
+
+### Docker Compose Setup
+15. Create a Docker Compose configuration to run all modules
+16. Include FastAPI service container
+17. Include Context retrieval service container
+18. Include ChromaDB container
+19. Include data pipeline container (optional, can be run separately)
+20. Include Jupyter notebook container (optional, for development)
