@@ -28,7 +28,7 @@ services:
       - CHROMA_SERVER_HOST=0.0.0.0
       - CHROMA_SERVER_HTTP_PORT=8000
     volumes:
-      - chroma_data:/chroma/chroma
+      - ./chroma:/data
     restart: unless-stopped
 
   # Data Pipeline (optional)
@@ -64,5 +64,3 @@ services:
       - ./src:/app/src
     restart: unless-stopped
 
-volumes:
-  chroma_data:
