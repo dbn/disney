@@ -1,7 +1,6 @@
-version: '3.8'
 
 services:
-  # Customer Experience Assessment Service
+  # Customer Experience Assessment Service (with ChromaDB integration)
   customer-experience-api:
     build:
       context: .
@@ -9,39 +8,22 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - CONTEXT_SERVICE_URL=http://context-service:8001
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - LOG_LEVEL=INFO
     depends_on:
-      - context-service
+      - chromadb
     volumes:
       - ./src:/app/src
       - ./data:/app/data
     restart: unless-stopped
 
-  # Context Retrieval Service
-  context-service:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.context
-    ports:
-      - "8001:8001"
-    environment:
-      - CHROMA_HOST=chromadb
-      - CHROMA_PORT=8000
-      - LOG_LEVEL=INFO
-    volumes:
-      - chroma_data:/app/data
-      - ./src:/app/src
-    depends_on:
-      - chromadb
-    restart: unless-stopped
-
-  # ChromaDB
+  # ChromaDB (Standalone)
   chromadb:
     image: chromadb/chroma:latest
     ports:
-      - "8002:8000"
+      - "8001:8000"
     environment:
       - CHROMA_SERVER_HOST=0.0.0.0
       - CHROMA_SERVER_HTTP_PORT=8000
@@ -55,14 +37,15 @@ services:
       context: .
       dockerfile: docker/Dockerfile.pipeline
     environment:
-      - CONTEXT_SERVICE_URL=http://context-service:8001
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
       - DATA_PATH=/app/data/DisneylandReviews.csv
       - LOG_LEVEL=INFO
     volumes:
       - ./data:/app/data
       - ./src:/app/src
     depends_on:
-      - context-service
+      - chromadb
     restart: "no"
 
   # Jupyter Notebook (development)

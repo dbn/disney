@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Customer Experience Assessment Service
+# Customer Experience Assessment Service (with ChromaDB integration)
 api = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
@@ -20,18 +20,12 @@ api = [
     "httpx>=0.25.0",
     "sentence-transformers>=2.2.2",
     "langchain>=0.1.0",
-    "langchain-community>=0.0.20",  # Add this line
+    "langchain-community>=0.0.20",
     "langchain-openai>=0.0.5",
+    "langchain-text-splitters>=0.0.1",
     "openai>=1.0.0",
-]
-
-# Context Retrieval Service
-context = [
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "pydantic>=2.5.0",
     "chromadb>=0.4.22",
-    "sentence-transformers>=2.2.2",
+    "tqdm>=4.65.0",
 ]
 
 # RAG Components (shared)
@@ -39,17 +33,24 @@ rag = [
     "langchain>=0.1.0",
     "langchain-community>=0.0.20",
     "langchain-openai>=0.0.5",
+    "langchain-text-splitters>=0.0.1",
     "sentence-transformers>=2.2.2",
     "openai>=1.0.0",
 ]
 
-# Data Pipeline
+# Data Pipeline (with RAG dependencies)
 pipeline = [
     "schedule>=1.2.0",
     "pandas>=2.3.2",
     "sqlalchemy>=2.0.23",
     "psycopg2-binary>=2.9.9",
     "httpx>=0.25.0",
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.20",
+    "langchain-text-splitters>=0.0.1",
+    "sentence-transformers>=2.2.2",
+    "chromadb>=0.4.22",
+    "tqdm>=4.65.0",
 ]
 
 # Jupyter Notebook

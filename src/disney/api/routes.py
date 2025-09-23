@@ -8,9 +8,9 @@ from fastapi.responses import JSONResponse
 
 from .models import QueryRequest, QueryResponse, HealthResponse, ErrorResponse, SourceDocument
 from ..shared.logging import setup_logging
-from ..rag.retrieval import get_retriever
+from ..rag.vector_store_manager import get_vector_store_manager
 from ..rag.generator import get_generator
-from .dependencies import get_http_client, get_context_service_url
+from .dependencies import get_http_client, get_chroma_host, get_chroma_port
 
 # Set up logging
 logger = setup_logging("customer-experience-api")
@@ -22,8 +22,9 @@ router = APIRouter()
 @router.post("/query", response_model=QueryResponse)
 async def query_reviews(
     request: QueryRequest,
-    http_client=Depends(get_http_client),
-    context_service_url=Depends(get_context_service_url)
+    
+    chroma_host=Depends(get_chroma_host),
+    chroma_port=Depends(get_chroma_port)
 ):
     """Submit a question and get LLM result back."""
     start_time = time.time()
@@ -32,12 +33,12 @@ async def query_reviews(
         logger.info(f"Processing query: {request.question[:100]}...")
         
         # Initialize RAG components
-        retriever = get_retriever()
+        vector_manager = get_vector_store_manager(chroma_host, chroma_port)
         generator = get_generator()
         
         # Step 1: Retrieve relevant context
         logger.info("Retrieving relevant context...")
-        context_docs = await retriever.get_relevant_context(
+        context_docs = await vector_manager.get_relevant_context(
             query=request.question,
             n_results=request.context_limit,
             similarity_threshold=0.7,  # Could be made configurable
@@ -92,23 +93,24 @@ async def query_reviews(
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(
-    http_client=Depends(get_http_client),
-    context_service_url=Depends(get_context_service_url)
+    chroma_host=Depends(get_chroma_host),
+    chroma_port=Depends(get_chroma_port)
 ):
     """Health check endpoint."""
     try:
         dependencies = {}
         
-        # Check Context Retrieval Service
+        # Check ChromaDB Service (direct connection)
         try:
-            response = await http_client.get(f"{context_service_url}/health", timeout=5.0)
-            if response.status_code == 200:
-                dependencies["context_service"] = "healthy"
+            vector_manager = get_vector_store_manager(chroma_host, chroma_port)
+            stats = await vector_manager.get_collection_stats()
+            if stats and stats.get("document_count", 0) >= 0:
+                dependencies["chromadb"] = "healthy"
             else:
-                dependencies["context_service"] = "unhealthy"
+                dependencies["chromadb"] = "unhealthy"
         except Exception as e:
-            logger.warning(f"Context service health check failed: {str(e)}")
-            dependencies["context_service"] = "unhealthy"
+            logger.warning(f"ChromaDB health check failed: {str(e)}")
+            dependencies["chromadb"] = "unhealthy"
         
         # Check LLM service (OpenAI)
         try:
@@ -132,11 +134,11 @@ async def health_check(
         
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail=f"Health check failed: {str(e)}"
+        return HealthResponse(
+            status="unhealthy",
+            version="1.0.0",
+            dependencies={"error": str(e)}
         )
-
 
 @router.get("/status")
 async def get_status():
@@ -151,7 +153,7 @@ async def get_status():
             "components": {
                 "rag_retriever": "available",
                 "rag_generator": "available",
-                "context_service_client": "available"
+                "chromadb_client": "available"
             }
         }
         

@@ -18,5 +18,8 @@ RUN pip install uv
 # Install dependencies
 RUN uv sync --extra pipeline --frozen
 
-# Run the pipeline
-CMD ["uv", "run", "--extra", "pipeline", "python", "scripts/run_pipeline.py"]
+# Set Python path to include src directory
+ENV PYTHONPATH=/app/src
+
+# Run the pipeline using the virtual environment
+CMD ["/app/.venv/bin/python", "scripts/run_pipeline.py"]

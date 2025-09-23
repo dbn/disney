@@ -37,7 +37,7 @@ Implementation plan for the Customer Experience Assessment Service - a FastAPI-b
 - **Dependencies**: sentence-transformers, numpy
 
 ### 3. RAG Retrieval Submodule
-- **File**: `src/disney/rag/retrieval.py`
+- **File**: `src/disney/rag/vector_store_manager.py`
 - **Responsibilities**:
   - Query processing and embedding
   - Vector similarity search via Context Retrieval Service

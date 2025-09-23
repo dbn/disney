@@ -9,10 +9,14 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application settings."""
     
-    # Service URLs
-    context_service_url: str = Field(
-        default="http://localhost:8001",
-        env="CONTEXT_SERVICE_URL"
+    # ChromaDB Settings
+    chroma_host: str = Field(
+        default="localhost",
+        env="CHROMA_HOST"
+    )
+    chroma_port: int = Field(
+        default=8000,
+        env="CHROMA_PORT"
     )
     model_name: str = Field(
         default="4o-mini",
@@ -25,15 +29,6 @@ class Settings(BaseSettings):
         env="OPENAI_API_KEY"
     )
     
-    # Database Settings
-    chroma_host: str = Field(
-        default="localhost",
-        env="CHROMA_HOST"
-    )
-    chroma_port: int = Field(
-        default=8000,
-        env="CHROMA_PORT"
-    )
     
     # Model Settings
     embedding_model: str = Field(

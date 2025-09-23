@@ -38,7 +38,7 @@ disney/
 │       ├── rag/                  # RAG components (shared)
 │       │   ├── __init__.py
 │       │   ├── embedder.py      # Text embedding module
-│       │   ├── retrieval.py     # RAG retrieval submodule
+│       │   ├── vector_store_manager.py     # RAG retrieval submodule
 │       │   └── generator.py     # Answer generator submodule
 │       ├── pipeline/             # Data pipeline
 │       │   ├── __init__.py
@@ -68,7 +68,7 @@ disney/
 │   ├── test_rag/                # RAG component tests
 │   │   ├── __init__.py
 │   │   ├── test_embedder.py
-│   │   ├── test_retrieval.py
+│   │   ├── test_vector_store_manager.py
 │   │   └── test_generator.py
 │   └── test_pipeline/           # Pipeline tests
 │       ├── __init__.py

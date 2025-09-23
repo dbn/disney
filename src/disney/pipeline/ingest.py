@@ -1,84 +1,94 @@
-"""Data ingestion logic for Disney reviews pipeline."""
+"""Data ingestion logic for Disney reviews pipeline using RAG-based processing."""
 
+import asyncio
 import pandas as pd
 from typing import List, Dict, Any, Optional
-import httpx
+from pathlib import Path
+from datetime import datetime
+from tqdm import tqdm
 
 from ..shared.config import settings
 from ..shared.logging import setup_logging
+from ..rag.vector_store_manager import get_vector_store_manager
 
 logger = setup_logging("data-pipeline")
 
 
 class DataIngester:
-    """Data ingestion component for processing Disney reviews."""
-    
-    def __init__(self, context_service_url: Optional[str] = None):
+    """Data ingestion component for processing Disney reviews using RAG pipeline."""
+
+    def __init__(self, chroma_host: Optional[str] = None, chroma_port: Optional[int] = None):
         """Initialize the data ingester.
-        
+
         Args:
-            context_service_url: URL of the Context Retrieval Service
+            chroma_host: ChromaDB host
+            chroma_port: ChromaDB port
         """
-        self.context_service_url = context_service_url or settings.context_service_url
+        self.chroma_host = chroma_host or settings.chroma_host
+        self.chroma_port = chroma_port or settings.chroma_port
         self.data_path = settings.data_path
-    
+        self.vector_store_manager = None
+
     def load_reviews_data(self) -> pd.DataFrame:
         """Load Disney reviews data from CSV file.
-        
+
         Returns:
             DataFrame with reviews data
         """
         try:
             logger.info(f"Loading reviews data from: {self.data_path}")
-            
-            # Load CSV data
-            df = pd.read_csv(self.data_path)
-            
+
+            # Load CSV data with latin-1 encoding to handle special characters
+            df = pd.read_csv(self.data_path, encoding="latin-1")
+
             logger.info(f"Loaded {len(df)} reviews")
             return df
-            
+
         except Exception as e:
             logger.error(f"Error loading reviews data: {str(e)}")
             raise
-    
+
     def preprocess_reviews(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """Preprocess reviews data for indexing.
-        
+
         Args:
             df: Reviews DataFrame
-            
+
         Returns:
-            List of processed review documents
+            List of preprocessed review dictionaries
         """
         try:
-            logger.info("Preprocessing reviews data")
-            
             documents = []
             
-            for idx, row in df.iterrows():
-                # Extract relevant fields
-                review_text = str(row.get('Review_Text', ''))
-                rating = row.get('Rating', 0)
-                year = row.get('Year_Month', '').split('-')[0] if pd.notna(row.get('Year_Month')) else 'Unknown'
-                branch = row.get('Branch', 'Unknown')
-                
-                # Skip empty reviews
-                if not review_text or review_text.strip() == '':
-                    continue
-                
-                # Create document
-                doc = {
-                    'id': f"review_{idx}",
-                    'content': review_text.strip(),
-                    'metadata': {
-                        'rating': int(rating) if pd.notna(rating) else 0,
-                        'year': year,
-                        'branch': branch,
-                        'original_index': idx
+            # Create progress bar for preprocessing
+            with tqdm(total=len(df), desc="Preprocessing reviews", unit="review") as pbar:
+                for idx, row in df.iterrows():
+                    # Extract review text and clean it
+                    review_text = str(row.get('Review_Text', '')).strip()
+                    if not review_text or review_text == 'nan':
+                        pbar.update(1)
+                        continue
+                    
+                    # Extract metadata
+                    rating = row.get('Rating', 0)
+                    year_month = str(row.get('Year_Month', ''))
+                    year = year_month.split('-')[0] if year_month and year_month != 'nan' else None
+                    branch = str(row.get('Branch', 'Unknown'))
+                    
+                    # Create document
+                    doc = {
+                        'id': f"review_{idx}",
+                        'content': review_text,
+                        'metadata': {
+                            'rating': int(rating) if pd.notna(rating) else 0,
+                            'year': year,
+                            'branch': branch,
+                            'original_index': idx
+                        }
                     }
-                }
-                
-                documents.append(doc)
+                    
+                    documents.append(doc)
+                    pbar.update(1)
             
             logger.info(f"Preprocessed {len(documents)} review documents")
             return documents
@@ -86,99 +96,111 @@ class DataIngester:
         except Exception as e:
             logger.error(f"Error preprocessing reviews: {str(e)}")
             raise
-    
+
     async def index_documents(
         self, 
         documents: List[Dict[str, Any]], 
         batch_size: int = 100
-    ) -> bool:
-        """Index documents into the vector database.
-        
+    ) -> Dict[str, Any]:
+        """Index documents using direct ChromaDB integration.
+
         Args:
             documents: List of document dictionaries
-            batch_size: Number of documents to process per batch
-            
+            batch_size: Batch size for processing
+
         Returns:
-            True if successful, False otherwise
+            Dictionary with indexing results
         """
         try:
             logger.info(f"Indexing {len(documents)} documents in batches of {batch_size}")
             
-            total_indexed = 0
+            # Initialize vector store manager if not already done
+            if not self.vector_store_manager:
+                self.vector_store_manager = get_vector_store_manager(self.chroma_host, self.chroma_port)
             
-            # Process in batches
-            for i in range(0, len(documents), batch_size):
-                batch = documents[i:i + batch_size]
-                
-                # Prepare batch data
-                batch_docs = [doc['content'] for doc in batch]
-                batch_metadatas = [doc['metadata'] for doc in batch]
-                batch_ids = [doc['id'] for doc in batch]
-                
-                # Send to Context Retrieval Service
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(
-                        f"{self.context_service_url}/api/v1/index",
-                        json={
-                            "documents": batch_docs,
-                            "metadatas": batch_metadatas,
-                            "ids": batch_ids
-                        }
+            # Convert documents to LangChain format
+            from langchain.schema import Document
+            langchain_docs = []
+            
+            # Create progress bar for document conversion
+            with tqdm(total=len(documents), desc="Converting documents", unit="doc") as pbar:
+                for doc in documents:
+                    langchain_doc = Document(
+                        page_content=doc['content'],
+                        metadata=doc['metadata']
                     )
-                    response.raise_for_status()
+                    langchain_docs.append(langchain_doc)
+                    pbar.update(1)
+            
+            # Add documents to ChromaDB with progress bar
+            with tqdm(total=len(langchain_docs), desc="Indexing to ChromaDB", unit="doc") as pbar:
+                # Process in batches for better progress tracking
+                for i in range(0, len(langchain_docs), batch_size):
+                    batch = langchain_docs[i:i + batch_size]
                     
-                    result = response.json()
-                    if result.get('success'):
-                        total_indexed += len(batch)
-                        logger.info(f"Indexed batch {i//batch_size + 1}: {len(batch)} documents")
-                    else:
-                        logger.error(f"Failed to index batch {i//batch_size + 1}")
-                        return False
+                    # Add batch to vector store
+                    success = await self.vector_store_manager.add_documents(batch)
+                    
+                    if not success:
+                        raise Exception(f"Failed to add batch {i//batch_size + 1} to ChromaDB")
+                    
+                    pbar.update(len(batch))
             
-            logger.info(f"Successfully indexed {total_indexed} documents")
-            return True
-            
+            result = {
+                'success': True,
+                'total_documents': len(documents),
+                'indexed_documents': len(documents),
+                'batch_size': batch_size
+            }
+            logger.info(f"Successfully indexed {len(documents)} documents")
+            return result
+                
         except Exception as e:
             logger.error(f"Error indexing documents: {str(e)}")
-            return False
-    
-    async def run_ingestion(self) -> bool:
-        """Run the complete data ingestion pipeline.
-        
+            raise
+
+    async def run_ingestion_pipeline(
+        self, 
+        batch_size: int = 100
+    ) -> Dict[str, Any]:
+        """Run the complete ingestion pipeline.
+
+        Args:
+            batch_size: Batch size for processing
+
         Returns:
-            True if successful, False otherwise
+            Dictionary with pipeline results
         """
         try:
             logger.info("Starting data ingestion pipeline")
             
-            # Load data
+            # Step 1: Load data
             df = self.load_reviews_data()
             
-            # Preprocess data
+            # Step 2: Preprocess data
             documents = self.preprocess_reviews(df)
             
-            # Index documents
-            success = await self.index_documents(documents)
+            if not documents:
+                raise ValueError("No documents to process")
             
-            if success:
-                logger.info("Data ingestion pipeline completed successfully")
-            else:
-                logger.error("Data ingestion pipeline failed")
+            # Step 3: Index documents
+            result = await self.index_documents(documents, batch_size)
             
-            return success
+            logger.info("Data ingestion pipeline completed successfully")
+            return result
             
         except Exception as e:
             logger.error(f"Data ingestion pipeline failed: {str(e)}")
-            return False
+            raise
 
 
 # Global ingester instance
 _ingester = None
 
 
-def get_ingester() -> DataIngester:
+def get_ingester(chroma_host: Optional[str] = None, chroma_port: Optional[int] = None) -> DataIngester:
     """Get or create ingester instance."""
     global _ingester
     if _ingester is None:
-        _ingester = DataIngester()
+        _ingester = DataIngester(chroma_host, chroma_port)
     return _ingester

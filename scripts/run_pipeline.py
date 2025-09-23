@@ -24,7 +24,7 @@ async def main():
         ingester = get_ingester()
         
         # Run ingestion
-        success = await ingester.run_ingestion()
+        success = await ingester.run_ingestion_pipeline()
         
         if success:
             logger.info("Data pipeline completed successfully")

@@ -1,0 +1,142 @@
+# Simplify Architecture - Remove Context Service
+
+## Overview
+Simplify the project architecture by removing the standalone Context Service and integrating ChromaDB directly with the main API service using LangChain. This reduces complexity while maintaining all functionality.
+
+## Tasks
+
+### 1. Remove Context Service
+- **1.1** Delete `src/disney/context_service/` directory and all its files
+- **1.2** Remove context service dependencies from `pyproject.toml`
+- **1.3** Remove context service container from `docker-compose.yml`
+- **1.4** Remove context service Dockerfile (`docker/Dockerfile.context`)
+- **1.5** Update API service to handle context retrieval directly
+
+### 2. Create Standalone ChromaDB Service
+- **2.1** Add ChromaDB service to `docker-compose.yml`
+- **2.2** Configure ChromaDB with persistent volume storage
+- **2.3** Set up ChromaDB environment variables and configuration
+- **2.4** Ensure ChromaDB is accessible from API service
+
+### 3. Integrate LangChain with ChromaDB
+- **3.1** Update `src/disney/rag/vector_store_manager.py` to use LangChain ChromaDB integration
+- **3.2** Implement direct ChromaDB connection in API service
+- **3.3** Update document indexing to use LangChain ChromaDB vector store
+- **3.4** Update context retrieval to query ChromaDB directly
+
+### 4. Update API Service Architecture
+- **4.1** Move ChromaDB operations to `src/disney/rag/` package
+- **4.2** Update API routes to handle document indexing directly
+- **4.3** Integrate document processing with ChromaDB storage
+- **4.4** Update data pipeline to use direct ChromaDB integration
+
+### 5. Update Dependencies and Configuration
+- **5.1** Add ChromaDB dependencies to API service in `pyproject.toml`
+- **5.2** Update environment variables for ChromaDB connection
+- **5.3** Remove context service URL configurations
+- **5.4** Update Docker configurations
+
+### 6. Update Documentation and Scripts
+- **6.1** Update README.md to reflect simplified architecture
+- **6.2** Update API documentation
+- **6.3** Update test scripts to work with new architecture
+- **6.4** Update Docker Compose documentation
+
+## New Architecture
+
+### Simplified Service Structure
+```
+API Service (FastAPI)
+├── RAG Package
+│   ├── Document Processor (LangChain)
+│   ├── Embedder (Sentence Transformers)
+│   ├── Retrieval (LangChain + ChromaDB)
+│   ├── Generator (LangChain + OpenAI)
+│   └── Ingestion Pipeline (LangChain + ChromaDB)
+├── API Routes
+│   ├── /query - Customer experience queries
+│   ├── /index - Document indexing
+│   └── /search - Vector search
+└── Data Pipeline
+    └── Direct ChromaDB integration
+
+ChromaDB Service (Standalone)
+├── Persistent storage
+├── Vector embeddings
+└── Metadata storage
+```
+
+### Benefits of Simplified Architecture
+- **Reduced Complexity**: Single API service instead of multiple services
+- **Better Performance**: Direct ChromaDB integration without HTTP overhead
+- **Easier Deployment**: Fewer containers to manage
+- **Simplified Development**: Single codebase for all functionality
+- **Cost Effective**: Fewer resources required
+
+### LangChain Integration Points
+- **Document Processing**: Use LangChain document loaders and splitters
+- **Vector Storage**: Use LangChain ChromaDB vector store
+- **Embeddings**: Use LangChain embedding models
+- **Retrieval**: Use LangChain retrieval chains
+- **Generation**: Use LangChain LLM chains
+
+## Implementation Details
+
+### ChromaDB Configuration
+```yaml
+chromadb:
+  image: chromadb/chroma:latest
+  ports:
+    - "8000:8000"
+  volumes:
+    - chroma_data:/chroma/chroma
+  environment:
+    - CHROMA_SERVER_HOST=0.0.0.0
+    - CHROMA_SERVER_HTTP_PORT=8000
+```
+
+### API Service Updates
+- Add ChromaDB client initialization
+- Integrate LangChain ChromaDB vector store
+- Update retrieval logic to use direct ChromaDB queries
+- Remove HTTP calls to context service
+
+### RAG Package Updates
+- Update retrieval module to use LangChain ChromaDB
+- Integrate document processing with vector storage
+- Update ingestion pipeline for direct ChromaDB storage
+- Maintain all existing functionality with simplified architecture
+
+## Success Criteria
+1. Context service completely removed
+2. ChromaDB running as standalone service
+3. API service directly integrated with ChromaDB
+4. All RAG functionality working with LangChain
+5. Document indexing and retrieval working
+6. Docker Compose running simplified architecture
+7. All tests passing with new architecture
+8. Performance maintained or improved
+9. Documentation updated
+10. Deployment simplified
+
+## Migration Steps
+1. **Phase 1**: Create ChromaDB service and update API service
+2. **Phase 2**: Update RAG package for direct ChromaDB integration
+3. **Phase 3**: Remove context service and update configurations
+4. **Phase 4**: Update tests and documentation
+5. **Phase 5**: Verify end-to-end functionality
+
+## Files to Modify
+- `docker-compose.yml` - Add ChromaDB, remove context service
+- `pyproject.toml` - Update dependencies
+- `src/disney/rag/vector_store_manager.py` - LangChain ChromaDB integration
+- `src/disney/rag/ingestion.py` - Direct ChromaDB storage
+- `src/disney/api/routes.py` - Remove context service calls
+- `src/disney/pipeline/ingest.py` - Direct ChromaDB integration
+- `README.md` - Update architecture documentation
+- Test files - Update for new architecture
+
+## Files to Delete
+- `src/disney/context_service/` - Entire directory
+- `docker/Dockerfile.context` - Context service Dockerfile
+- Context service related configurations

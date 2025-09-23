@@ -15,6 +15,11 @@ async def get_http_client() -> Generator[httpx.AsyncClient, None, None]:
         yield client
 
 
-def get_context_service_url() -> str:
-    """Get Context Retrieval Service URL."""
-    return settings.context_service_url
+def get_chroma_host() -> str:
+    """Get ChromaDB host."""
+    return settings.chroma_host
+
+
+def get_chroma_port() -> int:
+    """Get ChromaDB port."""
+    return settings.chroma_port

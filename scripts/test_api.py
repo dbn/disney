@@ -26,7 +26,8 @@ async def test_api_endpoints():
             response = await client.get(f"{base_url}/health")
             print(f"Health Status: {response.status_code}")
             if response.status_code == 200:
-                print(f"Health Response: {response.json()}")
+                health_data = response.json()
+                print(f"Health Response: {json.dumps(health_data, indent=2)}")
             else:
                 print(f"Health Error: {response.text}")
             
@@ -35,31 +36,54 @@ async def test_api_endpoints():
             response = await client.get(f"{base_url}/api/v1/status")
             print(f"Status Code: {response.status_code}")
             if response.status_code == 200:
-                print(f"Status Response: {response.json()}")
+                status_data = response.json()
+                print(f"Status Response: {json.dumps(status_data, indent=2)}")
             else:
                 print(f"Status Error: {response.text}")
             
-            # Test query endpoint
-            logger.info("Testing query endpoint...")
-            query_data = {
-                "question": "What do customers say about Space Mountain?",
-                "context_limit": 3,
-                "temperature": 0.7
-            }
+            # Test query endpoint with multiple questions
+            test_questions = [
+                "What do customers say about Space Mountain?",
+                "What are the most common complaints about Disneyland?",
+                "How do customers rate the food at Disneyland?",
+                "What do people think about the wait times?",
+                "What are the best attractions according to reviews?"
+            ]
             
-            response = await client.post(
-                f"{base_url}/api/v1/query",
-                json=query_data
-            )
-            print(f"Query Status: {response.status_code}")
-            if response.status_code == 200:
-                result = response.json()
-                print(f"Answer: {result.get('answer', 'No answer')}")
-                print(f"Confidence: {result.get('confidence', 0)}")
-                print(f"Sources: {len(result.get('sources', []))}")
-                print(f"Processing Time: {result.get('processing_time_ms', 0)}ms")
-            else:
-                print(f"Query Error: {response.text}")
+            for i, question in enumerate(test_questions, 1):
+                logger.info(f"Testing query {i}: {question}")
+                query_data = {
+                    "question": question,
+                    "context_limit": 3,
+                    "temperature": 0.7
+                }
+                
+                response = await client.post(
+                    f"{base_url}/api/v1/query",
+                    json=query_data
+                )
+                print(f"\n--- Query {i} ---")
+                print(f"Question: {question}")
+                print(f"Status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    print(f"Answer: {result.get('answer', 'No answer')}")
+                    print(f"Confidence: {result.get('confidence', 0):.2f}")
+                    print(f"Sources: {len(result.get('sources', []))}")
+                    print(f"Processing Time: {result.get('processing_time_ms', 0):.2f}ms")
+                    
+                    # Show source details
+                    if result.get('sources'):
+                        print("Source Documents:")
+                        for j, source in enumerate(result['sources'][:2], 1):
+                            print(f"  {j}. {source.get('excerpt', '')[:100]}...")
+                            print(f"     Rating: {source.get('metadata', {}).get('rating', 'N/A')}")
+                            print(f"     Relevance: {source.get('relevance_score', 0):.2f}")
+                else:
+                    print(f"Query Error: {response.text}")
+                
+                print("-" * 50)
                 
         except httpx.ConnectError:
             logger.error("Could not connect to API. Make sure the service is running.")
@@ -69,47 +93,38 @@ async def test_api_endpoints():
             print(f"Error: {str(e)}")
 
 
-async def test_context_service():
-    """Test the Context Retrieval Service."""
-    base_url = "http://localhost:8001"
+async def test_chromadb_connection():
+    """Test ChromaDB connection through the API."""
+    base_url = "http://localhost:8000"
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            # Test health endpoint
-            logger.info("Testing Context Service health...")
-            response = await client.get(f"{base_url}/health")
-            print(f"Context Service Health: {response.status_code}")
-            if response.status_code == 200:
-                print(f"Context Service Response: {response.json()}")
-            else:
-                print(f"Context Service Error: {response.text}")
-            
-            # Test search endpoint
-            logger.info("Testing search endpoint...")
-            search_data = {
-                "query": "Space Mountain wait times",
-                "n_results": 3
+            # Test a simple query to check if ChromaDB has data
+            logger.info("Testing ChromaDB connection...")
+            query_data = {
+                "question": "Disney",
+                "context_limit": 1,
+                "temperature": 0.7
             }
             
             response = await client.post(
-                f"{base_url}/api/v1/search",
-                json=search_data
+                f"{base_url}/api/v1/query",
+                json=query_data
             )
-            print(f"Search Status: {response.status_code}")
+            
             if response.status_code == 200:
                 result = response.json()
-                print(f"Found {len(result.get('results', []))} results")
-                for i, doc in enumerate(result.get('results', [])[:2]):
-                    print(f"  Result {i+1}: {doc.get('document', '')[:100]}...")
+                if result.get('sources'):
+                    print("✅ ChromaDB connection successful - data found")
+                    print(f"Found {len(result['sources'])} source documents")
+                else:
+                    print("⚠️ ChromaDB connected but no data found")
             else:
-                print(f"Search Error: {response.text}")
+                print(f"❌ ChromaDB connection failed: {response.text}")
                 
-        except httpx.ConnectError:
-            logger.error("Could not connect to Context Service. Make sure it's running.")
-            print("Error: Could not connect to Context Service. Make sure it's running.")
         except Exception as e:
-            logger.error(f"Error testing Context Service: {str(e)}")
-            print(f"Error: {str(e)}")
+            logger.error(f"Error testing ChromaDB: {str(e)}")
+            print(f"Error testing ChromaDB: {str(e)}")
 
 
 async def main():
@@ -117,13 +132,17 @@ async def main():
     print("🧪 Testing Disney AI Customer Experience Assessment API")
     print("=" * 60)
     
-    print("\n1. Testing Context Retrieval Service...")
-    await test_context_service()
-    
-    print("\n2. Testing Customer Experience Assessment API...")
+    print("\n1. Testing API Health and Status...")
     await test_api_endpoints()
     
+    print("\n2. Testing ChromaDB Connection...")
+    await test_chromadb_connection()
+    
     print("\n✅ Testing complete!")
+    print("\nTo test manually, you can use:")
+    print("curl -X POST 'http://localhost:8000/api/v1/query' \\")
+    print("  -H 'Content-Type: application/json' \\")
+    print("  -d '{\"question\": \"What do customers say about Space Mountain?\", \"context_limit\": 3}'")
 
 
 if __name__ == "__main__":
