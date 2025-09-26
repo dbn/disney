@@ -1,0 +1,254 @@
+# Task: Add ChromaDB Client Injection to RetrievalManager
+
+## Overview
+Add the ability to pass a ChromaDB HTTP client as a parameter to RetrievalManager, enabling better testing with in-memory ChromaDB and improved flexibility for different deployment scenarios.
+
+## Current State
+- RetrievalManager currently creates its own ChromaDB HttpClient internally
+- Tests fail when trying to use real ChromaDB because they attempt to connect to external server
+- No way to inject custom ChromaDB client for testing or different environments
+
+## Goals
+1. Enable dependency injection of ChromaDB client
+2. Support both external ChromaDB server and in-memory ChromaDB
+3. Maintain backward compatibility with existing code
+4. Enable proper unit testing with real ChromaDB instances
+5. Improve testability and flexibility
+
+## Implementation Plan
+
+### Phase 1: Modify RetrievalManager Constructor
+**File:** `src/disney/rag/retrieval_manager.py`
+
+**Changes:**
+1. Add optional `chroma_client` parameter to `__init__` method
+2. Add optional `chroma_settings` parameter for custom ChromaDB settings
+3. Modify `_initialize_vector_store` to use injected client if provided
+4. Add fallback to create default client if none provided
+5. Update type hints and docstrings
+
+**Code Structure:**
+```python
+def __init__(
+    self, 
+    chroma_host: Optional[str] = None, 
+    chroma_port: Optional[int] = None,
+    chroma_client: Optional[chromadb.ClientAPI] = None,
+    chroma_settings: Optional[ChromaSettings] = None
+):
+    """Initialize RetrievalManager with optional ChromaDB client injection."""
+```
+
+### Phase 2: Update Client Initialization Logic
+**File:** `src/disney/rag/retrieval_manager.py`
+
+**Changes:**
+1. Refactor `_initialize_vector_store` method
+2. Add logic to use injected client or create new one
+3. Support both HttpClient (external) and Client (in-memory)
+4. Handle different ChromaDB client types gracefully
+
+**Implementation:**
+```python
+def _initialize_vector_store(self):
+    """Initialize the ChromaDB vector store with optional client injection."""
+    if self.chroma_client is not None:
+        # Use injected client (for testing or custom scenarios)
+        self.chroma_client = self.chroma_client
+    else:
+        # Create default HttpClient for external server
+        self.chroma_client = chromadb.HttpClient(
+            host=self.chroma_host,
+            port=self.chroma_port,
+            settings=self.chroma_settings or ChromaSettings(
+                allow_reset=True,
+                anonymized_telemetry=False
+            )
+        )
+```
+
+### Phase 3: Update Factory Functions
+**File:** `src/disney/rag/retrieval_manager.py`
+
+**Changes:**
+1. Update `get_retrieval_manager` to accept client parameters
+2. Add new factory function for in-memory testing
+3. Maintain backward compatibility
+
+**New Functions:**
+```python
+def get_retrieval_manager(
+    chroma_host: Optional[str] = None, 
+    chroma_port: Optional[int] = None,
+    chroma_client: Optional[chromadb.ClientAPI] = None,
+    chroma_settings: Optional[ChromaSettings] = None
+) -> RetrievalManager:
+    """Get RetrievalManager with optional client injection."""
+
+def get_in_memory_retrieval_manager() -> RetrievalManager:
+    """Get RetrievalManager with in-memory ChromaDB for testing."""
+    import chromadb
+    client = chromadb.Client()
+    return RetrievalManager(chroma_client=client)
+```
+
+### Phase 4: Update Tests to Use In-Memory ChromaDB
+**File:** `tests/test_pipeline/test_ingest.py`
+
+**Changes:**
+1. Update `TestDataIngesterWithRealChromaDB` to use in-memory client
+2. Update `TestDataIngesterIntegrationWithRealCSV` to use in-memory client
+3. Add tests for client injection functionality
+4. Ensure all real ChromaDB tests pass
+
+**Test Updates:**
+```python
+@pytest.fixture
+def data_ingester_with_real_chroma(self, temp_chroma_dir):
+    """Create DataIngester with in-memory ChromaDB."""
+    import chromadb
+    client = chromadb.Client()  # In-memory client
+    
+    with patch('src.disney.pipeline.ingest.get_retrieval_manager') as mock_get_manager:
+        mock_manager = RetrievalManager(chroma_client=client)
+        mock_get_manager.return_value = mock_manager
+        
+        ingester = DataIngester(chroma_host="localhost", chroma_port=8000)
+        yield ingester
+```
+
+### Phase 5: Add Client Injection Tests
+**File:** `tests/test_rag/test_retrieval_chain.py`
+
+**Changes:**
+1. Add tests for client injection functionality
+2. Test both HttpClient and in-memory Client scenarios
+3. Test backward compatibility
+4. Test error handling with invalid clients
+
+**New Test Cases:**
+- `test_retrieval_manager_with_injected_client`
+- `test_retrieval_manager_with_in_memory_client`
+- `test_retrieval_manager_backward_compatibility`
+- `test_retrieval_manager_invalid_client_handling`
+
+### Phase 6: Update Documentation
+**File:** `README.md`
+
+**Changes:**
+1. Document new client injection parameters
+2. Add examples for testing with in-memory ChromaDB
+3. Update API documentation
+4. Add migration guide for existing code
+
+## Implementation Details
+
+### Constructor Signature
+```python
+def __init__(
+    self, 
+    chroma_host: Optional[str] = None, 
+    chroma_port: Optional[int] = None,
+    chroma_client: Optional[chromadb.ClientAPI] = None,
+    chroma_settings: Optional[ChromaSettings] = None
+):
+    """
+    Initialize RetrievalManager with optional ChromaDB client injection.
+    
+    Args:
+        chroma_host: ChromaDB host (ignored if chroma_client provided)
+        chroma_port: ChromaDB port (ignored if chroma_client provided)
+        chroma_client: Optional ChromaDB client (HttpClient or in-memory Client)
+        chroma_settings: Optional ChromaDB settings (ignored if chroma_client provided)
+    """
+```
+
+### Client Type Detection
+```python
+def _detect_client_type(self, client: chromadb.ClientAPI) -> str:
+    """Detect if client is HttpClient or in-memory Client."""
+    if hasattr(client, 'get_tenant'):
+        return "http"  # HttpClient
+    else:
+        return "memory"  # In-memory Client
+```
+
+### Error Handling
+- Validate client type compatibility
+- Provide clear error messages for invalid clients
+- Graceful fallback to default client creation
+- Log warnings for deprecated usage patterns
+
+## Testing Strategy
+
+### Unit Tests
+- Test client injection with both HttpClient and in-memory Client
+- Test backward compatibility with existing code
+- Test error handling with invalid clients
+- Test factory functions
+
+### Integration Tests
+- Test real data ingestion with in-memory ChromaDB
+- Test document retrieval and search functionality
+- Test collection management operations
+- Test concurrent access scenarios
+
+### Performance Tests
+- Compare performance between HttpClient and in-memory Client
+- Test memory usage with large datasets
+- Test cleanup and resource management
+
+## Backward Compatibility
+
+### Existing Code
+- All existing code continues to work without changes
+- Default behavior remains unchanged
+- No breaking changes to public API
+
+### Migration Path
+- Existing code: No changes required
+- New code: Can optionally use client injection
+- Tests: Can use in-memory ChromaDB for better isolation
+
+## Success Criteria
+
+1. ✅ RetrievalManager accepts optional ChromaDB client parameter
+2. ✅ In-memory ChromaDB works for testing
+3. ✅ External ChromaDB server continues to work
+4. ✅ All existing tests pass
+5. ✅ New real ChromaDB tests pass
+6. ✅ Backward compatibility maintained
+7. ✅ Documentation updated
+8. ✅ Performance is not degraded
+
+## Files to Modify
+
+1. `src/disney/rag/retrieval_manager.py` - Main implementation
+2. `tests/test_pipeline/test_ingest.py` - Update real ChromaDB tests
+3. `tests/test_rag/test_retrieval_chain.py` - Add client injection tests
+4. `README.md` - Update documentation
+
+## Dependencies
+
+- No new external dependencies required
+- Uses existing `chromadb` package
+- Maintains compatibility with current LangChain integration
+
+## Timeline
+
+- **Phase 1-2:** Core implementation (1-2 hours)
+- **Phase 3:** Factory functions (30 minutes)
+- **Phase 4:** Test updates (1 hour)
+- **Phase 5:** Additional tests (1 hour)
+- **Phase 6:** Documentation (30 minutes)
+
+**Total Estimated Time:** 4-5 hours
+
+## Benefits
+
+1. **Better Testing** - In-memory ChromaDB for isolated tests
+2. **Flexibility** - Support different ChromaDB deployment scenarios
+3. **Maintainability** - Easier to test and debug
+4. **Performance** - Faster tests with in-memory database
+5. **Reliability** - No external dependencies for unit tests
+6. **Developer Experience** - Easier to run tests locally

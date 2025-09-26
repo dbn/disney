@@ -37,6 +37,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.pipeline
     environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
       - DATA_PATH=/app/data/DisneylandReviews.csv

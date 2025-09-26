@@ -102,8 +102,8 @@ curl -X POST "http://localhost:8000/api/v1/query" \
   -H "Content-Type: application/json" \
   -d '{
     "question": "What do customers say about Space Mountain wait times?",
-    "context_limit": 5,
-    "temperature": 0.7
+    "context_limit": 20,
+    "temperature": 0.01
   }'
 ```
 
@@ -387,4 +387,17 @@ See `env.example` for all available configuration options.
 
 ## 📝 License
 
-[Add your license here]
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/collections/disney_reviews/query" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "query_texts": ["example query"],
+           "n_results": 1,
+           "include": ["metadatas", "documents"]
+         }'
+```
+```bash
+  'http://localhost:8001/api/v2/tenants/default_tenant/databases/default_database/collections/disney_reviews/count' \
+  -H 'accept: application/json'
+```

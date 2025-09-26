@@ -9,6 +9,8 @@ from chromadb.config import Settings as ChromaSettings
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
+from langchain.retrievers.document_compressors import EmbeddingsFilter
+from langchain.retrievers import ContextualCompressionRetriever
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -18,22 +20,34 @@ from ..shared.config import settings
 from ..shared.logging import setup_logging
 from .prompt_template import get_prompt_template
 
-logger = setup_logging("vector-store-manager")
+logger = setup_logging("retrieval-manager")
 
 
 class RetrievalManager:
     """Chain-based retrieval management using LangChain chains."""
     
-    def __init__(self, chroma_host: Optional[str] = None, chroma_port: Optional[int] = None):
+    def __init__(
+        self, 
+        chroma_host: Optional[str] = None, 
+        chroma_port: Optional[int] = None,
+        chroma_client: Optional[chromadb.ClientAPI] = None,
+        chroma_settings: Optional[ChromaSettings] = None,
+        collection_name: str = "disney_reviews"
+    ):
         """Initialize the chain-based vector store manager.
         
         Args:
-            chroma_host: ChromaDB host
-            chroma_port: ChromaDB port
+            chroma_host: ChromaDB host (ignored if chroma_client provided)
+            chroma_port: ChromaDB port (ignored if chroma_client provided)
+            chroma_client: Optional ChromaDB client (HttpClient or in-memory Client)
+            chroma_settings: Optional ChromaDB settings (ignored if chroma_client provided)
+            collection_name: Name of the ChromaDB collection to use
         """
         self.chroma_host = chroma_host or settings.chroma_host
         self.chroma_port = chroma_port or settings.chroma_port
-        self.collection_name = "disney_reviews"
+        self.chroma_client = chroma_client
+        self.chroma_settings = chroma_settings
+        self.collection_name = collection_name
         
         # Initialize components
         self._initialize_embeddings()
@@ -41,7 +55,9 @@ class RetrievalManager:
         self._initialize_vector_store()
         self._initialize_chain()
         
-        logger.info(f"RetrievalManager initialized with collection: {self.collection_name}")
+        # Log client type for debugging
+        client_type = self._detect_client_type(self.chroma_client) if self.chroma_client else "http"
+        logger.info(f"RetrievalManager initialized with collection: {self.collection_name} (client: {client_type})")
     
     def _initialize_embeddings(self):
         """Initialize the embedding model."""
@@ -62,16 +78,21 @@ class RetrievalManager:
         logger.info(f"Initialized LLM: {settings.llm_model}")
     
     def _initialize_vector_store(self):
-        """Initialize the ChromaDB vector store."""
-        # Initialize ChromaDB client
-        self.chroma_client = chromadb.HttpClient(
-            host=self.chroma_host,
-            port=self.chroma_port,
-            settings=ChromaSettings(
-                allow_reset=True,
-                anonymized_telemetry=False
+        """Initialize the ChromaDB vector store with optional client injection."""
+        if self.chroma_client is not None:
+            # Use injected client (for testing or custom scenarios)
+            logger.info("Using injected ChromaDB client")
+        else:
+            # Create default HttpClient for external server
+            self.chroma_client = chromadb.HttpClient(
+                host=self.chroma_host,
+                port=self.chroma_port,
+                settings=self.chroma_settings or ChromaSettings(
+                    allow_reset=True,
+                    anonymized_telemetry=False
+                )
             )
-        )
+            logger.info(f"Created HttpClient for {self.chroma_host}:{self.chroma_port}")
         
         # Initialize LangChain Chroma vector store
         self.vectorstore = Chroma(
@@ -82,23 +103,45 @@ class RetrievalManager:
         
         logger.info(f"Initialized vector store: {self.collection_name}")
     
+    def _detect_client_type(self, client: chromadb.ClientAPI) -> str:
+        """Detect if client is HttpClient or in-memory Client."""
+        if hasattr(client, 'get_tenant'):
+            return "http"  # HttpClient
+        else:
+            return "memory"  # In-memory Client
+    
     def _initialize_chain(self):
         """Initialize the RAG chain."""
         # Create retriever
+
+        def inspect_retrieved_docs(docs):
+            print(f"\n[DEBUG] Number of documents retrieved after filtering: {len(docs)}\n")
+            # You can also print the content of the docs if you want:
+            # for i, doc in enumerate(docs):
+            #     print(f"  Doc {i+1}: {doc.page_content[:100]}...")
+            return docs
+
         self.retriever = self.vectorstore.as_retriever(
             search_type=settings.retriever_search_type,
-            search_kwargs={
-                "k": settings.retriever_k,
-                "score_threshold": settings.retriever_score_threshold
-            }
+            search_kwargs={"k": settings.retriever_k}
         )
+
+        # embeddings_filter = EmbeddingsFilter(
+        #     embeddings=self.embeddings,
+        #     similarity_threshold=settings.retriever_similarity_threshold
+        # )
+
+        # self.retriever = ContextualCompressionRetriever(
+        #     base_compressor=embeddings_filter,
+        #     base_retriever=base_retriever
+        # )
         
         # Create prompt template
         prompt = get_prompt_template()
         
         # Create the RAG chain
         self.rag_chain = (
-            {"context": self.retriever, "question": RunnablePassthrough()}
+            {"context": self.retriever | inspect_retrieved_docs, "question": RunnablePassthrough()}
             | prompt
             | self.llm
             | StrOutputParser()
@@ -123,7 +166,7 @@ class RetrievalManager:
             return "I apologize, but I encountered an error while processing your question."
     
     # Document management methods
-    def add_documents(self, documents: List[Document]) -> bool:
+    async def add_documents(self, documents: List[Document]) -> bool:
         """Add documents to the vector store.
         
         Args:
@@ -133,30 +176,13 @@ class RetrievalManager:
             True if successful, False otherwise
         """
         try:
-            self.vectorstore.add_documents(documents)
+            await self.vectorstore.aadd_documents(documents)
             logger.info(f"Added {len(documents)} documents to vector store")
             return True
         except Exception as e:
             logger.error(f"Error adding documents: {str(e)}")
             return False
     
-    def add_texts(self, texts: List[str], metadatas: Optional[List[Dict]] = None) -> bool:
-        """Add texts to the vector store.
-        
-        Args:
-            texts: List of text strings to add
-            metadatas: Optional list of metadata dictionaries
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            self.vectorstore.add_texts(texts, metadatas)
-            logger.info(f"Added {len(texts)} texts to vector store")
-            return True
-        except Exception as e:
-            logger.error(f"Error adding texts: {str(e)}")
-            return False
     
     # Utility methods
     def get_collection_stats(self) -> Dict[str, Any]:
@@ -176,7 +202,7 @@ class RetrievalManager:
                 "embedding_model": settings.embedding_model,
                 "llm_model": settings.llm_model,
                 "retriever_k": settings.retriever_k,
-                "retriever_score_threshold": settings.retriever_score_threshold
+                "retriever_score_threshold": settings.retriever_similarity_threshold
             }
         except Exception as e:
             logger.error(f"Error getting collection stats: {str(e)}")
@@ -286,7 +312,7 @@ class RetrievalManager:
             "embedding_model": settings.embedding_model,
             "llm_model": settings.llm_model,
             "retriever_k": settings.retriever_k,
-            "retriever_score_threshold": settings.retriever_score_threshold,
+            "retriever_score_threshold": settings.retriever_similarity_threshold,
             "retriever_search_type": settings.retriever_search_type,
             "llm_temperature": settings.llm_temperature,
             "llm_max_tokens": settings.llm_max_tokens
@@ -294,9 +320,37 @@ class RetrievalManager:
 
 
 # Factory functions for backward compatibility
-def get_retrieval_manager(chroma_host: Optional[str] = None, chroma_port: Optional[int] = None) -> RetrievalManager:
-    """Get a RetrievalManager instance."""
-    return RetrievalManager(chroma_host, chroma_port)
+def get_retrieval_manager(
+    chroma_host: Optional[str] = None, 
+    chroma_port: Optional[int] = None,
+    chroma_client: Optional[chromadb.ClientAPI] = None,
+    chroma_settings: Optional[ChromaSettings] = None,
+    collection_name: str = "disney_reviews"
+) -> RetrievalManager:
+    """Get a RetrievalManager instance with optional client injection.
+    
+    Args:
+        chroma_host: ChromaDB host (ignored if chroma_client provided)
+        chroma_port: ChromaDB port (ignored if chroma_client provided)
+        chroma_client: Optional ChromaDB client (HttpClient or in-memory Client)
+        chroma_settings: Optional ChromaDB settings (ignored if chroma_client provided)
+        collection_name: Name of the ChromaDB collection to use
+    """
+    return RetrievalManager(chroma_host, chroma_port, chroma_client, chroma_settings, collection_name)
+
+
+def get_in_memory_retrieval_manager(collection_name: str = "disney_reviews") -> RetrievalManager:
+    """Get RetrievalManager with in-memory ChromaDB for testing.
+    
+    Args:
+        collection_name: Name of the ChromaDB collection to use
+    
+    Returns:
+        RetrievalManager instance with in-memory ChromaDB client
+    """
+    import chromadb
+    client = chromadb.Client()
+    return RetrievalManager(chroma_client=client, collection_name=collection_name)
 
 
 def reset_retrieval_manager():

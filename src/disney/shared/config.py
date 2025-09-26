@@ -57,9 +57,9 @@ class Settings(BaseSettings):
         default=5,
         env="RETRIEVER_K"
     )
-    retriever_score_threshold: float = Field(
+    retriever_similarity_threshold: float = Field(
         default=0.7,
-        env="RETRIEVER_SCORE_THRESHOLD"
+        env="RETRIEVER_SIMILARITY_THRESHOLD"
     )
     retriever_search_type: str = Field(
         default="similarity",
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
         env="LLM_MAX_TOKENS"
     )
     llm_model: str = Field(
-        default="4o-mini",
+        default="gpt-4o-mini",
         env="LLM_MODEL"
     )
     enable_streaming: bool = Field(

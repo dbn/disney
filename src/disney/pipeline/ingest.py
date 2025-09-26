@@ -190,7 +190,7 @@ class DataIngester:
             return result
             
         except Exception as e:
-            logger.error(f"Data ingestion pipeline failed: {str(e)}")
+            logger.exception(f"Data ingestion pipeline failed: {str(e)}", exc_info=True)
             raise
 
 

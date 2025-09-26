@@ -91,7 +91,7 @@ def test_query_endpoint_invalid_data(client):
 def test_health_endpoint_success(mock_vector_manager, client):
     """Test health endpoint with successful dependency checks."""
     # Mock vector store manager
-    mock_vector_instance = AsyncMock()
+    mock_vector_instance = MagicMock()
     mock_vector_instance.get_collection_stats.return_value = {
         "collection_name": "disney_reviews",
         "document_count": 100,
@@ -162,7 +162,7 @@ def test_query_endpoint_temperature_out_of_range(client):
 def test_health_endpoint_chromadb_unavailable(mock_vector_manager, client):
     """Test health endpoint when ChromaDB is unavailable."""
     # Mock vector store manager to raise an exception
-    mock_vector_instance = AsyncMock()
+    mock_vector_instance = MagicMock()
     mock_vector_instance.get_collection_stats.side_effect = Exception("ChromaDB connection failed")
     mock_vector_manager.return_value = mock_vector_instance
     

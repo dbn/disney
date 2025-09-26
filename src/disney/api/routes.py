@@ -88,7 +88,7 @@ async def health_check(
         # Check ChromaDB Service (direct connection)
         try:
             vector_manager = get_retrieval_manager(chroma_host, chroma_port)
-            stats = await vector_manager.get_collection_stats()
+            stats = vector_manager.get_collection_stats()
             if stats and stats.get("document_count", 0) >= 0:
                 dependencies["chromadb"] = "healthy"
             else:

@@ -25,6 +25,7 @@ class TestRetrievalManagerChain:
             # Mock Chroma vector store
             mock_chroma_instance = MagicMock()
             mock_chroma_instance.as_retriever.return_value = MagicMock()
+            mock_chroma_instance.aadd_documents = AsyncMock(return_value=None)
             mock_chroma.return_value = mock_chroma_instance
             
             # Mock embeddings
@@ -67,43 +68,32 @@ class TestRetrievalManagerChain:
         
         assert "I apologize, but I encountered an error" in result
 
-    def test_add_documents_success(self, mock_retrieval_manager):
+    @pytest.mark.asyncio
+    async def test_add_documents_success(self, mock_retrieval_manager):
         """Test successful document addition."""
         manager = mock_retrieval_manager
-        manager.vectorstore.add_documents.return_value = None
         
         documents = [
             Document(page_content="Test content 1", metadata={"id": "1"}),
             Document(page_content="Test content 2", metadata={"id": "2"})
         ]
         
-        result = manager.add_documents(documents)
+        result = await manager.add_documents(documents)
         
         assert result is True
-        manager.vectorstore.add_documents.assert_called_once_with(documents)
+        manager.vectorstore.aadd_documents.assert_called_once_with(documents)
 
-    def test_add_documents_error(self, mock_retrieval_manager):
+    @pytest.mark.asyncio
+    async def test_add_documents_error(self, mock_retrieval_manager):
         """Test document addition error handling."""
         manager = mock_retrieval_manager
-        manager.vectorstore.add_documents.side_effect = Exception("Add error")
+        manager.vectorstore.aadd_documents.side_effect = Exception("Add error")
         
         documents = [Document(page_content="Test", metadata={"id": "1"})]
-        result = manager.add_documents(documents)
+        result = await manager.add_documents(documents)
         
         assert result is False
 
-    def test_add_texts_success(self, mock_retrieval_manager):
-        """Test successful text addition."""
-        manager = mock_retrieval_manager
-        manager.vectorstore.add_texts.return_value = None
-        
-        texts = ["Text 1", "Text 2"]
-        metadatas = [{"id": "1"}, {"id": "2"}]
-        
-        result = manager.add_texts(texts, metadatas)
-        
-        assert result is True
-        manager.vectorstore.add_texts.assert_called_once_with(texts, metadatas)
 
     def test_get_collection_stats_success(self, mock_retrieval_manager):
         """Test successful collection stats retrieval."""
@@ -214,7 +204,7 @@ class TestRetrievalManagerChain:
             # Test get_retrieval_manager
             result1 = get_retrieval_manager("localhost", 8000)
             assert result1 == mock_instance
-            mock_manager_class.assert_called_with("localhost", 8000)
+            mock_manager_class.assert_called_with("localhost", 8000, None, None, "disney_reviews")
             
             # Test get_retriever (backward compatibility)
             result2 = get_retrieval_manager("localhost", 8000)
