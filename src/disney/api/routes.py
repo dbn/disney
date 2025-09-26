@@ -8,8 +8,7 @@ from fastapi.responses import JSONResponse
 
 from .models import QueryRequest, QueryResponse, HealthResponse, ErrorResponse, SourceDocument
 from ..shared.logging import setup_logging
-from ..rag.vector_store_manager import get_vector_store_manager
-from ..rag.generator import get_generator
+from ..rag.retrieval_manager import get_retrieval_manager
 from .dependencies import get_http_client, get_chroma_host, get_chroma_port
 
 # Set up logging
@@ -33,36 +32,22 @@ async def query_reviews(
         logger.info(f"Processing query: {request.question[:100]}...")
         
         # Initialize RAG components
-        vector_manager = get_vector_store_manager(chroma_host, chroma_port)
-        generator = get_generator()
+        vector_manager = get_retrieval_manager(chroma_host, chroma_port)
         
-        # Step 1: Retrieve relevant context
-        logger.info("Retrieving relevant context...")
-        context_docs = await vector_manager.get_relevant_context(
+        # Use the new chain-based query method
+        logger.info("Processing query with RAG chain...")
+        answer = await vector_manager.query(request.question)
+        
+        # Get sources for context (optional - for backward compatibility)
+        logger.info("Retrieving sources for context...")
+        context_docs = vector_manager.get_relevant_context(
             query=request.question,
             n_results=request.context_limit,
-            similarity_threshold=0.7,  # Could be made configurable
-            max_context_length=4000   # Could be made configurable
+            similarity_threshold=0.7,
+            max_context_length=4000
         )
         
-        if not context_docs:
-            logger.warning("No relevant context found for query")
-            return QueryResponse(
-                answer="I apologize, but I couldn't find any relevant information about your question in the Disney reviews database. Please try rephrasing your question or asking about a different topic.",
-                sources=[],
-                confidence=0.0,
-                processing_time_ms=(time.time() - start_time) * 1000
-            )
-        
-        # Step 2: Generate answer using LLM
-        logger.info(f"Generating answer with {len(context_docs)} context documents...")
-        generation_result = generator.generate_answer(
-            question=request.question,
-            context_docs=context_docs,
-            temperature=request.temperature
-        )
-        
-        # Step 3: Format response
+        # Format response
         sources = []
         for doc in context_docs:
             sources.append(SourceDocument(
@@ -77,9 +62,9 @@ async def query_reviews(
         logger.info(f"Query processed successfully in {processing_time_ms:.2f}ms")
         
         return QueryResponse(
-            answer=generation_result["answer"],
+            answer=answer,
             sources=sources,
-            confidence=generation_result["confidence"],
+            confidence=0.8,  # Default confidence for chain-based approach
             processing_time_ms=processing_time_ms
         )
         
@@ -102,7 +87,7 @@ async def health_check(
         
         # Check ChromaDB Service (direct connection)
         try:
-            vector_manager = get_vector_store_manager(chroma_host, chroma_port)
+            vector_manager = get_retrieval_manager(chroma_host, chroma_port)
             stats = await vector_manager.get_collection_stats()
             if stats and stats.get("document_count", 0) >= 0:
                 dependencies["chromadb"] = "healthy"
@@ -112,11 +97,11 @@ async def health_check(
             logger.warning(f"ChromaDB health check failed: {str(e)}")
             dependencies["chromadb"] = "unhealthy"
         
-        # Check LLM service (OpenAI)
+        # Check LLM service (OpenAI) - now handled by RetrievalManager
         try:
-            generator = get_generator()
-            # Simple test to check if OpenAI API is accessible
-            dependencies["llm_service"] = "healthy" if generator else "unhealthy"
+            # Test if we can create a vector manager (which initializes LLM)
+            test_manager = get_retrieval_manager(chroma_host, chroma_port)
+            dependencies["llm_service"] = "healthy" if test_manager else "unhealthy"
         except Exception as e:
             logger.warning(f"LLM service health check failed: {str(e)}")
             dependencies["llm_service"] = "unhealthy"

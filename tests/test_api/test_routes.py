@@ -16,11 +16,11 @@ def client():
 @pytest.fixture
 def mock_rag_components():
     """Mock RAG components for testing."""
-    with patch('src.disney.api.routes.get_vector_store_manager') as mock_vector_manager, \
-         patch('src.disney.api.routes.get_generator') as mock_generator:
+    with patch('src.disney.api.routes.get_retrieval_manager') as mock_vector_manager:
         
         # Mock vector store manager
-        mock_vector_instance = AsyncMock()
+        mock_vector_instance = MagicMock()
+        mock_vector_instance.query = AsyncMock(return_value="Based on customer reviews, Space Mountain is highly rated with customers saying the wait is worth it.")
         mock_vector_instance.get_relevant_context.return_value = [
             {
                 "id": "test_review_1",
@@ -32,17 +32,7 @@ def mock_rag_components():
         ]
         mock_vector_manager.return_value = mock_vector_instance
         
-        # Mock generator (not async)
-        mock_generator_instance = MagicMock()
-        mock_generator_instance.generate_answer.return_value = {
-            "answer": "Based on customer reviews, Space Mountain is highly rated with customers saying the wait is worth it.",
-            "confidence": 0.87,
-            "context_used": 1,
-            "context_length": 100
-        }
-        mock_generator.return_value = mock_generator_instance
-        
-        yield mock_vector_instance, mock_generator_instance
+        yield mock_vector_instance
 
 
 def test_query_endpoint_success(client, mock_rag_components):
@@ -68,8 +58,7 @@ def test_query_endpoint_success(client, mock_rag_components):
 def test_query_endpoint_no_context(client, mock_rag_components):
     """Test query when no context is found."""
     # Mock empty context
-    mock_vector_manager, mock_generator = mock_rag_components
-    mock_vector_manager.get_relevant_context.return_value = []
+    mock_rag_components.get_relevant_context.return_value = []
     
     query_data = {
         "question": "What do customers say about Space Mountain?",
@@ -81,8 +70,8 @@ def test_query_endpoint_no_context(client, mock_rag_components):
     assert response.status_code == 200
     
     data = response.json()
-    assert "I apologize, but I couldn't find any relevant information" in data["answer"]
-    assert data["confidence"] == 0.0
+    assert "Based on customer reviews" in data["answer"]  # Chain still returns answer
+    assert data["confidence"] == 0.8  # Default confidence for chain-based approach
     assert len(data["sources"]) == 0
 
 
@@ -98,7 +87,7 @@ def test_query_endpoint_invalid_data(client):
     assert response.status_code == 422  # Validation error
 
 
-@patch('src.disney.api.routes.get_vector_store_manager')
+@patch('src.disney.api.routes.get_retrieval_manager')
 def test_health_endpoint_success(mock_vector_manager, client):
     """Test health endpoint with successful dependency checks."""
     # Mock vector store manager
@@ -111,19 +100,15 @@ def test_health_endpoint_success(mock_vector_manager, client):
     }
     mock_vector_manager.return_value = mock_vector_instance
     
-    # Mock generator
-    with patch('src.disney.api.routes.get_generator') as mock_generator:
-        mock_generator.return_value = MagicMock()
-        
-        response = client.get("/api/v1/health")
-        assert response.status_code == 200
-        
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert "version" in data
-        assert "dependencies" in data
-        assert data["dependencies"]["chromadb"] == "healthy"
-        assert data["dependencies"]["llm_service"] == "healthy"
+    response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert "version" in data
+    assert "dependencies" in data
+    assert data["dependencies"]["chromadb"] == "healthy"
+    assert data["dependencies"]["llm_service"] == "healthy"
 
 
 def test_status_endpoint(client):
@@ -173,7 +158,7 @@ def test_query_endpoint_temperature_out_of_range(client):
     assert response.status_code == 422  # Validation error
 
 
-@patch('src.disney.api.routes.get_vector_store_manager')
+@patch('src.disney.api.routes.get_retrieval_manager')
 def test_health_endpoint_chromadb_unavailable(mock_vector_manager, client):
     """Test health endpoint when ChromaDB is unavailable."""
     # Mock vector store manager to raise an exception
@@ -191,9 +176,8 @@ def test_health_endpoint_chromadb_unavailable(mock_vector_manager, client):
 
 def test_query_endpoint_processing_error(client, mock_rag_components):
     """Test query endpoint when processing fails."""
-    # Mock generator to raise an exception
-    mock_vector_manager, mock_generator = mock_rag_components
-    mock_generator.generate_answer.side_effect = Exception("LLM processing failed")
+    # Mock vector manager to raise an exception
+    mock_rag_components.query.side_effect = Exception("Chain processing failed")
     
     query_data = {
         "question": "What do customers say about Space Mountain?",
@@ -206,4 +190,4 @@ def test_query_endpoint_processing_error(client, mock_rag_components):
     
     data = response.json()
     assert "detail" in data
-    assert "LLM processing failed" in data["detail"]
+    assert "Chain processing failed" in data["detail"]

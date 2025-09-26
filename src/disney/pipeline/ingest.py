@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from ..shared.config import settings
 from ..shared.logging import setup_logging
-from ..rag.vector_store_manager import get_vector_store_manager
+from ..rag.retrieval_manager import get_retrieval_manager
 
 logger = setup_logging("data-pipeline")
 
@@ -27,7 +27,7 @@ class DataIngester:
         self.chroma_host = chroma_host or settings.chroma_host
         self.chroma_port = chroma_port or settings.chroma_port
         self.data_path = settings.data_path
-        self.vector_store_manager = None
+        self.retrieval_manager = None
 
     def load_reviews_data(self) -> pd.DataFrame:
         """Load Disney reviews data from CSV file.
@@ -115,8 +115,8 @@ class DataIngester:
             logger.info(f"Indexing {len(documents)} documents in batches of {batch_size}")
             
             # Initialize vector store manager if not already done
-            if not self.vector_store_manager:
-                self.vector_store_manager = get_vector_store_manager(self.chroma_host, self.chroma_port)
+            if not self.retrieval_manager:
+                self.retrieval_manager = get_retrieval_manager(self.chroma_host, self.chroma_port)
             
             # Convert documents to LangChain format
             from langchain.schema import Document
@@ -139,7 +139,7 @@ class DataIngester:
                     batch = langchain_docs[i:i + batch_size]
                     
                     # Add batch to vector store
-                    success = await self.vector_store_manager.add_documents(batch)
+                    success = await self.retrieval_manager.add_documents(batch)
                     
                     if not success:
                         raise Exception(f"Failed to add batch {i//batch_size + 1} to ChromaDB")

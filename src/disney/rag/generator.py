@@ -29,7 +29,7 @@ class AnswerGenerator:
         self.llm = None
         self.prompt_template = None
         self.llm_chain = None
-        self.model_name = model_name or settings.model_name
+        self.model_name = model_name or settings.llm_model
         self._initialize_llm()
     
     def _initialize_llm(self):

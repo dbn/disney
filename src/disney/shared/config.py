@@ -14,13 +14,10 @@ class Settings(BaseSettings):
         default="localhost",
         env="CHROMA_HOST"
     )
+    
     chroma_port: int = Field(
         default=8000,
         env="CHROMA_PORT"
-    )
-    model_name: str = Field(
-        default="4o-mini",
-        env="MODEL_NAME"
     )
 
     # API Keys
@@ -28,7 +25,6 @@ class Settings(BaseSettings):
         default=None,
         env="OPENAI_API_KEY"
     )
-    
     
     # Model Settings
     embedding_model: str = Field(
@@ -54,6 +50,36 @@ class Settings(BaseSettings):
     data_path: str = Field(
         default="data/DisneylandReviews.csv",
         env="DATA_PATH"
+    )
+    
+    # Chain Configuration
+    retriever_k: int = Field(
+        default=5,
+        env="RETRIEVER_K"
+    )
+    retriever_score_threshold: float = Field(
+        default=0.7,
+        env="RETRIEVER_SCORE_THRESHOLD"
+    )
+    retriever_search_type: str = Field(
+        default="similarity",
+        env="RETRIEVER_SEARCH_TYPE"
+    )
+    llm_temperature: float = Field(
+        default=0.7,
+        env="LLM_TEMPERATURE"
+    )
+    llm_max_tokens: int = Field(
+        default=1000,
+        env="LLM_MAX_TOKENS"
+    )
+    llm_model: str = Field(
+        default="4o-mini",
+        env="LLM_MODEL"
+    )
+    enable_streaming: bool = Field(
+        default=False,
+        env="ENABLE_STREAMING"
     )
     
     class Config:

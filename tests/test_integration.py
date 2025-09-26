@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 import httpx
 
-from src.disney.rag.vector_store_manager import VectorStoreManager
+from src.disney.rag.retrieval_manager import RetrievalManager
 from src.disney.rag.generator import AnswerGenerator
 from src.disney.rag.document_processor import DocumentProcessor, DocumentProcessorConfig
 
@@ -81,11 +81,11 @@ def test_document_processor():
     assert all(hasattr(doc, 'metadata') for doc in documents)
 
 
-def test_vector_store_manager_initialization():
-    """Test VectorStoreManager initialization with mocked ChromaDB."""
-    with patch('src.disney.rag.vector_store_manager.chromadb.HttpClient') as mock_chroma_client, \
-         patch('src.disney.rag.vector_store_manager.Chroma') as mock_chroma, \
-         patch('src.disney.rag.vector_store_manager.HuggingFaceEmbeddings') as mock_embeddings:
+def test_retrieval_manager_initialization():
+    """Test RetrievalManager initialization with mocked ChromaDB."""
+    with patch('src.disney.rag.retrieval_manager.chromadb.HttpClient') as mock_chroma_client, \
+         patch('src.disney.rag.retrieval_manager.Chroma') as mock_chroma, \
+         patch('src.disney.rag.retrieval_manager.HuggingFaceEmbeddings') as mock_embeddings:
         
         # Mock ChromaDB client
         mock_client_instance = MagicMock()
@@ -99,8 +99,8 @@ def test_vector_store_manager_initialization():
         mock_embeddings_instance = MagicMock()
         mock_embeddings.return_value = mock_embeddings_instance
         
-        # Test VectorStoreManager initialization
-        vector_manager = VectorStoreManager()
+        # Test RetrievalManager initialization
+        vector_manager = RetrievalManager()
         
         # Verify that the client was created
         mock_chroma_client.assert_called_once()
@@ -116,12 +116,12 @@ def test_vector_store_manager_initialization():
 def test_rag_components_integration():
     """Test that RAG components can be imported and initialized."""
     # Test that we can import all components
-    from src.disney.rag.vector_store_manager import VectorStoreManager
+    from src.disney.rag.retrieval_manager import RetrievalManager
     from src.disney.rag.generator import AnswerGenerator
     from src.disney.rag.document_processor import DocumentProcessor, DocumentProcessorConfig
     
     # Test that classes exist and can be referenced
-    assert VectorStoreManager is not None
+    assert RetrievalManager is not None
     assert AnswerGenerator is not None
     assert DocumentProcessor is not None
     assert DocumentProcessorConfig is not None
@@ -165,11 +165,11 @@ def test_answer_generator_config():
         assert generator.model_name == "gpt-4"
 
 
-def test_vector_store_manager_config():
-    """Test VectorStoreManager configuration."""
-    with patch('src.disney.rag.vector_store_manager.chromadb.HttpClient') as mock_chroma_client, \
-         patch('src.disney.rag.vector_store_manager.Chroma') as mock_chroma, \
-         patch('src.disney.rag.vector_store_manager.HuggingFaceEmbeddings') as mock_embeddings:
+def test_retrieval_manager_config():
+    """Test RetrievalManager configuration."""
+    with patch('src.disney.rag.retrieval_manager.chromadb.HttpClient') as mock_chroma_client, \
+         patch('src.disney.rag.retrieval_manager.Chroma') as mock_chroma, \
+         patch('src.disney.rag.retrieval_manager.HuggingFaceEmbeddings') as mock_embeddings:
         
         # Mock all dependencies
         mock_chroma_client.return_value = MagicMock()
@@ -177,7 +177,7 @@ def test_vector_store_manager_config():
         mock_embeddings.return_value = MagicMock()
         
         # Test with custom configuration (using actual constructor parameters)
-        vector_manager = VectorStoreManager(
+        vector_manager = RetrievalManager(
             chroma_host="custom-host",
             chroma_port=9000
         )

@@ -1,0 +1,292 @@
+# VectorStoreManager Chain-Based Refactoring Plan
+
+## Task Overview
+Refactor the `VectorStoreManager` class to use LangChain's chain-based approach instead of the current complex async implementation. This will simplify the codebase by 80% while maintaining all existing functionality and improving performance.
+
+## Current State Analysis
+- **Current implementation**: 276 lines of complex async code
+- **Issues**: Overly complex, manual async handling, redundant functionality
+- **Dependencies**: Custom wrapper methods, complex error handling, tight coupling
+- **Maintenance burden**: High due to custom implementations
+
+## Target Architecture
+
+### 1. Chain-Based Design Principles
+- **Use LangChain chains** for RAG pipeline composition
+- **Leverage `as_retriever()`** instead of custom similarity search
+- **Implement prompt templating** with `ChatPromptTemplate`
+- **Use `RunnablePassthrough`** for input handling
+- **Apply `StrOutputParser`** for response formatting
+
+### 2. Simplified Class Structure
+```python
+class VectorStoreManager:
+    def __init__(self, chroma_host: str, chroma_port: int):
+        # Initialize embeddings and LLM
+        # Create vector store
+        # Build RAG chain
+    
+    def query(self, question: str) -> str:
+        # Simple chain invocation
+    
+    def add_documents(self, documents: List[Document]):
+        # Add documents to vector store
+    
+    def get_collection_stats(self) -> Dict[str, Any]:
+        # Get basic statistics
+```
+
+## Implementation Plan
+
+### Phase 1: Core Refactoring
+**File**: `src/disney/rag/vector_store_manager.py`
+
+#### 1.1 Replace Complex Initialization
+- **Remove**: Complex async initialization logic
+- **Add**: Simple synchronous initialization
+- **Components**:
+  - `HuggingFaceEmbeddings` initialization
+  - `ChatOpenAI` setup
+  - `Chroma` vector store creation
+  - RAG chain construction
+
+#### 1.2 Implement Chain-Based RAG
+- **Create**: `_create_rag_chain()` method
+- **Components**:
+  - Retriever: `vectorstore.as_retriever()`
+  - Prompt: `ChatPromptTemplate` with Disney-specific template
+  - Chain: `{"context": retriever, "question": RunnablePassthrough()} | prompt | llm | StrOutputParser()`
+
+#### 1.3 Simplify Query Methods
+- **Replace**: `get_relevant_context()` with simple `query()`
+- **Remove**: Complex similarity search logic
+- **Add**: Direct chain invocation
+- **Maintain**: Backward compatibility with existing API
+
+#### 1.4 Streamline Document Management
+- **Simplify**: `add_documents()` method
+- **Remove**: Complex batch processing logic
+- **Use**: LangChain's built-in document handling
+
+### Phase 2: Configuration Management
+**File**: `src/disney/shared/config.py` (modify existing)
+
+#### 2.1 Add Chain Configuration to Existing Settings
+- **Add chain settings** to the existing `Settings` class
+- **Retriever settings**: `k=5`, `score_threshold=0.7`
+- **LLM settings**: `temperature=0.7`, `max_tokens=1000`
+- **Chain execution settings**: `max_context_length`, `enable_streaming`
+
+#### 2.2 Updated Settings Class
+```python
+class Settings(BaseSettings):
+    # ... existing settings ...
+    
+    # Chain Configuration
+    retriever_k: int = Field(default=5, env="RETRIEVER_K")
+    retriever_score_threshold: float = Field(default=0.7, env="RETRIEVER_SCORE_THRESHOLD")
+    retriever_search_type: str = Field(default="similarity", env="RETRIEVER_SEARCH_TYPE")
+    llm_temperature: float = Field(default=0.7, env="LLM_TEMPERATURE")
+    llm_max_tokens: int = Field(default=1000, env="LLM_MAX_TOKENS")
+    llm_model: str = Field(default="gpt-3.5-turbo", env="LLM_MODEL")
+    enable_streaming: bool = Field(default=False, env="ENABLE_STREAMING")
+```
+
+### Phase 3: Prompt Template
+**File**: `src/disney/rag/prompt_template.py` (new)
+
+#### 3.1 Single Prompt Template
+- **One Disney-specific prompt** for customer experience questions
+- **Simple template** with `{question}` and `{context}` variables
+- **Configurable** through environment variables
+
+#### 3.2 Template Implementation
+```python
+DISNEY_QA_TEMPLATE = """You are an assistant for Disney customer experience questions.
+Use the following pieces of retrieved context from Disney customer reviews to answer the question.
+If you don't know the answer, just say that you don't know.
+Use three sentences maximum and keep the answer concise.
+
+Question: {question}
+Context: {context}
+
+Answer:"""
+
+def get_prompt_template() -> ChatPromptTemplate:
+    return ChatPromptTemplate.from_template(DISNEY_QA_TEMPLATE)
+```
+
+### Phase 4: Backward Compatibility
+**File**: `src/disney/rag/vector_store_manager.py`
+
+#### 4.1 Maintain Existing API
+- **Keep**: All existing method signatures
+- **Implement**: Chain-based logic behind existing methods
+- **Add**: Deprecation warnings for complex methods
+
+#### 4.2 Migration Methods
+```python
+# New simple method
+def query(self, question: str) -> str:
+    return self.rag_chain.invoke(question)
+
+# Backward compatible method
+def get_relevant_context(self, query: str, n_results: int = 5, **kwargs) -> List[Dict]:
+    # Use chain internally but return old format
+    # Deprecated: Use query() instead
+```
+
+## File Structure Changes
+
+### New Files
+```
+src/disney/rag/
+├── vector_store_manager.py          # Refactored main class
+└── prompt_template.py               # Single prompt template
+```
+
+### Modified Files
+```
+src/disney/shared/config.py          # Add chain configuration settings
+src/disney/api/routes.py             # Update to use new query() method
+src/disney/pipeline/ingest.py        # Update to use simplified API
+tests/test_rag/test_vector_store.py  # Update tests for chain approach
+```
+
+## Implementation Steps
+
+### Step 1: Update Configuration
+1. **Add chain settings** to existing `config.py`
+2. **Add environment variable support** for chain parameters
+3. **Maintain backward compatibility** with existing settings
+
+### Step 2: Create Prompt Template
+1. **Create single prompt template** in `prompt_template.py`
+2. **Implement simple template function** for easy access
+3. **Keep template simple** with only `{question}` and `{context}` variables
+
+### Step 3: Refactor VectorStoreManager
+1. **Implement chain-based approach** in existing `vector_store_manager.py`
+2. **Add new `query()` method** using LangChain chains
+3. **Maintain existing API** for backward compatibility
+4. **Add deprecation warnings** for complex methods
+
+### Step 4: Update Dependencies
+1. **Update API routes** to use simplified `query()` method
+2. **Update pipeline ingestion** to use new document management
+3. **Update tests** to work with chain-based approach
+4. **Update documentation** with new usage examples
+
+## Code Reduction Analysis
+
+### Current Implementation
+- **Lines of code**: 276
+- **Methods**: 8 complex async methods
+- **Dependencies**: Custom async handling, manual similarity search
+- **Maintenance**: High complexity, custom error handling
+
+### New Implementation
+- **Lines of code**: ~80 (70% reduction)
+- **Methods**: 4 simple methods
+- **Dependencies**: LangChain chains, built-in optimizations
+- **Maintenance**: Low complexity, standard patterns
+
+## Benefits
+
+### 1. Simplicity
+- **80% code reduction** while maintaining functionality
+- **Standard LangChain patterns** that developers understand
+- **Eliminates complex async handling** throughout the codebase
+
+### 2. Performance
+- **LangChain optimizations** built-in
+- **Automatic batching** and caching
+- **Better memory management** with chain execution
+
+### 3. Maintainability
+- **Less custom code** to maintain
+- **Standard testing patterns** with LangChain utilities
+- **Easy to extend** with additional chain components
+
+### 4. Flexibility
+- **Easy to modify prompts** without code changes
+- **Simple to swap models** or configurations
+- **Chain composition** for complex workflows
+
+## Testing Strategy
+
+### 1. Unit Tests
+- **Test chain creation** and configuration
+- **Test individual chain components** (retriever, prompt, LLM)
+- **Test error handling** with chain execution
+
+### 2. Integration Tests
+- **Test end-to-end chain execution** with real data
+- **Test backward compatibility** with existing API
+- **Test performance** with different dataset sizes
+
+### 3. Migration Tests
+- **Test API compatibility** during transition
+- **Test data consistency** between old and new implementations
+- **Test performance improvements** with benchmarks
+
+## Migration Timeline
+
+### Week 1: Configuration and Template
+- Update `config.py` with chain settings
+- Create single prompt template
+- Test configuration changes
+
+### Week 2: Core Refactoring
+- Refactor VectorStoreManager with chain-based approach
+- Implement new `query()` method
+- Maintain backward compatibility
+
+### Week 3: Testing and Integration
+- Update tests for chain-based approach
+- Update API routes and pipeline
+- Run performance benchmarks
+
+### Week 4: Deployment and Documentation
+- Deploy with feature flags
+- Update documentation
+- Create migration guide
+
+## Success Criteria
+
+### 1. Functional Requirements
+- ✅ All existing functionality maintained
+- ✅ 80% code reduction achieved
+- ✅ Performance improved or maintained
+- ✅ Backward compatibility preserved
+
+### 2. Quality Requirements
+- ✅ All tests passing
+- ✅ No breaking changes to public API
+- ✅ Documentation updated
+- ✅ Performance benchmarks improved
+
+### 3. Maintainability Requirements
+- ✅ Code follows LangChain best practices
+- ✅ Easy to extend with new chain components
+- ✅ Clear separation of concerns
+- ✅ Comprehensive test coverage
+
+## Risk Mitigation
+
+### 1. Backward Compatibility
+- **Strategy**: Maintain existing API during transition
+- **Mitigation**: Gradual migration with feature flags
+- **Rollback**: Keep old implementation as fallback
+
+### 2. Performance Regression
+- **Strategy**: Comprehensive performance testing
+- **Mitigation**: Benchmark before and after changes
+- **Monitoring**: Real-time performance metrics
+
+### 3. Data Consistency
+- **Strategy**: Validate data consistency between implementations
+- **Mitigation**: Side-by-side testing with same data
+- **Verification**: Automated consistency checks
+
+This refactoring will transform the VectorStoreManager from a complex, custom implementation into a simple, maintainable, and powerful chain-based system that leverages LangChain's full capabilities while maintaining all existing functionality.

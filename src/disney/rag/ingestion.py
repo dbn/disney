@@ -197,23 +197,8 @@ class BatchIndexer:
     async def _index_single_batch(self, documents: List[Any], collection_name: str) -> Dict[str, Any]:
         """Index a single batch of documents."""
         try:
-            # Convert LangChain documents to the format expected by vector_db
-            documents_data = []
-            metadatas = []
-            ids = []
-            
-            for doc in documents:
-                documents_data.append(doc.page_content)
-                metadatas.append(doc.metadata)
-                ids.append(doc.metadata.get('id', f"doc_{len(ids)}"))
-            
-            # Index to vector database
-            result = await self.vector_db.add_documents(
-                collection_name=collection_name,
-                documents=documents_data,
-                metadatas=metadatas,
-                ids=ids
-            )
+            # Index to vector database using the correct method signature
+            result = self.vector_db.add_documents(documents)
             
             return {
                 'indexed_count': len(documents),
@@ -329,7 +314,7 @@ class IngestionPipeline:
         """Validate that indexing was successful."""
         try:
             # Get collection stats
-            stats = await self.vector_db.get_collection_stats(collection_name)
+            stats = self.vector_db.get_collection_stats()
             actual_count = stats.get('document_count', 0)
             
             success = actual_count >= expected_count * 0.95  # Allow 5% tolerance
@@ -361,7 +346,7 @@ class IngestionPipeline:
             logger.info(f"Reindexing collection '{collection_name}'")
             
             # Clear existing collection
-            await self.vector_db.delete_collection(collection_name)
+            self.vector_db.delete_collection()
             logger.info(f"Cleared existing collection '{collection_name}'")
             
             # Re-ingest
