@@ -1,70 +1,80 @@
-"""Pytest configuration and fixtures."""
+"""Pytest configuration and fixtures for Disney API tests."""
 
 import pytest
-import asyncio
-from typing import AsyncGenerator
-import httpx
-from unittest.mock import Mock, AsyncMock
+import os
+from unittest.mock import patch, MagicMock
+from fastapi.testclient import TestClient
 
-from src.disney.shared.config import settings
+# Set test environment variables before importing the app
+os.environ["CHROMA_HOST"] = "localhost"
+os.environ["CHROMA_PORT"] = "8000"
+os.environ["OPENAI_API_KEY"] = "test-key"
+os.environ["QUERY_PARSER_ENABLED"] = "false"
+
+from disney.api.main import app
+from disney.rag.retrieval_manager import get_in_memory_retrieval_manager
+from disney.api.dependencies import get_retrieval_manager
 
 
 @pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def client():
+    """Create test client with mocked RetrievalManager."""
+    # We'll override the dependency in individual test fixtures
+    return TestClient(app)
 
 
-@pytest.fixture
-async def http_client() -> AsyncGenerator[httpx.AsyncClient, None]:
-    """HTTP client for testing."""
-    async with httpx.AsyncClient() as client:
-        yield client
-
-
-@pytest.fixture
-def mock_context_service():
-    """Mock Context Retrieval Service responses."""
-    mock_service = Mock()
-    mock_service.search.return_value = {
-        "results": [
-            {
-                "id": "test_doc_1",
-                "document": "This is a test Disney review about Space Mountain.",
-                "metadata": {"rating": 5, "branch": "Disneyland"},
-                "distance": 0.1,
-                "score": 0.9
-            }
+@pytest.fixture(scope="function")
+def mock_retrieval_manager():
+    """Mock RetrievalManager for testing."""
+    from disney.api.models import QueryResponse, SourceDocument
+    from unittest.mock import AsyncMock
+    
+    # Create a completely mocked RetrievalManager
+    manager = MagicMock()
+    
+    mock_response = QueryResponse(
+        answer="Test answer from mock",
+        sources=[
+            SourceDocument(
+                review_id="test_1",
+                relevance_score=0.95,
+                excerpt="Test excerpt",
+                metadata={"rating": 5, "branch": "Disneyland"}
+            )
         ],
-        "query": "test query",
-        "total_results": 1
-    }
-    mock_service.index.return_value = {
-        "success": True,
-        "indexed_count": 1,
-        "message": "Documents indexed successfully"
-    }
-    return mock_service
+        confidence=0.87,
+        processing_time_ms=1000.0
+    )
+    
+    # Mock all the methods we need
+    manager.query_with_metadata = AsyncMock(return_value=mock_response)
+    manager.query = AsyncMock(return_value="Test answer from mock")
+    manager.get_collection_stats = MagicMock(return_value={
+        "collection_name": "disney_reviews",
+        "document_count": 100,
+        "last_updated": "2023-01-01T00:00:00",
+        "embedding_model": "all-MiniLM-L6-v2"
+    })
+    manager.is_cache_enabled = MagicMock(return_value=True)
+    
+    return manager
 
 
-@pytest.fixture
-def sample_review_data():
-    """Sample Disney review data for testing."""
-    return {
-        "Review_Text": "Space Mountain was amazing! The wait was worth it.",
-        "Rating": 5,
-        "Year_Month": "2023-01",
-        "Branch": "Disneyland"
-    }
+@pytest.fixture(scope="function")
+def mock_retrieval_manager_with_patch(client, mock_retrieval_manager):
+    """Patch the get_retrieval_manager dependency with mock."""
+    # Override the dependency in the app
+    app.dependency_overrides[get_retrieval_manager] = lambda: mock_retrieval_manager
+    yield mock_retrieval_manager
+    # Clean up after test
+    app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def sample_query_request():
-    """Sample query request for testing."""
-    return {
-        "question": "What do customers say about Space Mountain?",
-        "context_limit": 5,
-        "temperature": 0.7
-    }
+@pytest.fixture(scope="function")
+def mock_retrieval_manager_routes_patch(client, mock_retrieval_manager):
+    """Patch the get_retrieval_manager dependency in routes with mock."""
+    # Override the dependency in the app
+    app.dependency_overrides[get_retrieval_manager] = lambda: mock_retrieval_manager
+    yield mock_retrieval_manager
+    # Clean up after test
+    app.dependency_overrides.clear()

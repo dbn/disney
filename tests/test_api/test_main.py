@@ -1,15 +1,6 @@
 """Tests for Customer Experience Assessment API main module."""
 
 import pytest
-from fastapi.testclient import TestClient
-
-from src.disney.api.main import app
-
-
-@pytest.fixture
-def client():
-    """Test client for the API."""
-    return TestClient(app)
 
 
 def test_health_check(client):

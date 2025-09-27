@@ -156,6 +156,12 @@ uv run --extra dev pytest --cov=src/disney
 
 # Test API endpoints manually
 uv run --extra api python scripts/test_api.py
+
+# Start API server for testing
+uv run --extra api python scripts/start_api.py
+
+# Run comprehensive test suite (starts server + runs tests)
+uv run --extra api python scripts/test_full_api.py
 ```
 
 ### **Test Coverage:**

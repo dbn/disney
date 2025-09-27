@@ -1,41 +1,11 @@
 """Tests for Customer Experience Assessment API routes."""
 
 import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock, MagicMock
-
-from src.disney.api.main import app
-
-
-@pytest.fixture
-def client():
-    """Test client for the API."""
-    return TestClient(app)
+from disney.api.models import QueryResponse, SourceDocument
 
 
-@pytest.fixture
-def mock_rag_components():
-    """Mock RAG components for testing."""
-    with patch('src.disney.api.routes.get_retrieval_manager') as mock_vector_manager:
-        
-        # Mock vector store manager
-        mock_vector_instance = MagicMock()
-        mock_vector_instance.query = AsyncMock(return_value="Based on customer reviews, Space Mountain is highly rated with customers saying the wait is worth it.")
-        mock_vector_instance.get_relevant_context.return_value = [
-            {
-                "id": "test_review_1",
-                "content": "Space Mountain was amazing! The wait was worth it.",
-                "metadata": {"rating": 5, "branch": "Disneyland"},
-                "relevance_score": 0.95,
-                "distance": 0.05
-            }
-        ]
-        mock_vector_manager.return_value = mock_vector_instance
-        
-        yield mock_vector_instance
-
-
-def test_query_endpoint_success(client, mock_rag_components):
+def test_query_endpoint_success(client, mock_retrieval_manager_routes_patch):
     """Test successful query processing."""
     query_data = {
         "question": "What do customers say about Space Mountain?",
@@ -52,13 +22,22 @@ def test_query_endpoint_success(client, mock_rag_components):
     assert "confidence" in data
     assert "processing_time_ms" in data
     assert len(data["sources"]) == 1
-    assert data["sources"][0]["review_id"] == "test_review_1"
+    assert data["sources"][0]["review_id"] == "test_1"
+    assert data["answer"] == "Test answer from mock"
+    assert data["confidence"] == 0.87
+    assert data["processing_time_ms"] == 1000.0
 
 
-def test_query_endpoint_no_context(client, mock_rag_components):
+def test_query_endpoint_no_context(client, mock_retrieval_manager_routes_patch):
     """Test query when no context is found."""
-    # Mock empty context
-    mock_rag_components.get_relevant_context.return_value = []
+    # Mock empty response
+    empty_response = QueryResponse(
+        answer="I couldn't find any relevant information for your question.",
+        sources=[],
+        confidence=0.5,
+        processing_time_ms=500.0
+    )
+    mock_retrieval_manager_routes_patch.query_with_metadata.return_value = empty_response
     
     query_data = {
         "question": "What do customers say about Space Mountain?",
@@ -70,12 +49,12 @@ def test_query_endpoint_no_context(client, mock_rag_components):
     assert response.status_code == 200
     
     data = response.json()
-    assert "Based on customer reviews" in data["answer"]  # Chain still returns answer
-    assert data["confidence"] == 0.8  # Default confidence for chain-based approach
+    assert "I couldn't find any relevant information" in data["answer"]
+    assert data["confidence"] == 0.5
     assert len(data["sources"]) == 0
 
 
-def test_query_endpoint_invalid_data(client):
+def test_query_endpoint_invalid_data(client, mock_retrieval_manager_routes_patch):
     """Test query endpoint with invalid data."""
     invalid_data = {
         "question": "",  # Empty question should fail validation
@@ -87,19 +66,8 @@ def test_query_endpoint_invalid_data(client):
     assert response.status_code == 422  # Validation error
 
 
-@patch('src.disney.api.routes.get_retrieval_manager')
-def test_health_endpoint_success(mock_vector_manager, client):
+def test_health_endpoint_success(client, mock_retrieval_manager_routes_patch):
     """Test health endpoint with successful dependency checks."""
-    # Mock vector store manager
-    mock_vector_instance = MagicMock()
-    mock_vector_instance.get_collection_stats.return_value = {
-        "collection_name": "disney_reviews",
-        "document_count": 100,
-        "last_updated": "2023-01-01T00:00:00",
-        "embedding_model": "all-MiniLM-L6-v2"
-    }
-    mock_vector_manager.return_value = mock_vector_instance
-    
     response = client.get("/api/v1/health")
     assert response.status_code == 200
     
@@ -111,7 +79,7 @@ def test_health_endpoint_success(mock_vector_manager, client):
     assert data["dependencies"]["llm_service"] == "healthy"
 
 
-def test_status_endpoint(client):
+def test_status_endpoint(client, mock_retrieval_manager_routes_patch):
     """Test status endpoint."""
     response = client.get("/api/v1/status")
     assert response.status_code == 200
@@ -123,7 +91,7 @@ def test_status_endpoint(client):
     assert "components" in data
 
 
-def test_query_endpoint_missing_question(client):
+def test_query_endpoint_missing_question(client, mock_retrieval_manager_routes_patch):
     """Test query endpoint with missing question field."""
     invalid_data = {
         "context_limit": 5,
@@ -134,7 +102,7 @@ def test_query_endpoint_missing_question(client):
     assert response.status_code == 422  # Validation error
 
 
-def test_query_endpoint_negative_context_limit(client):
+def test_query_endpoint_negative_context_limit(client, mock_retrieval_manager_routes_patch):
     """Test query endpoint with negative context limit."""
     query_data = {
         "question": "What do customers say about Space Mountain?",
@@ -146,7 +114,7 @@ def test_query_endpoint_negative_context_limit(client):
     assert response.status_code == 422  # Validation error
 
 
-def test_query_endpoint_temperature_out_of_range(client):
+def test_query_endpoint_temperature_out_of_range(client, mock_retrieval_manager_routes_patch):
     """Test query endpoint with temperature out of range."""
     query_data = {
         "question": "What do customers say about Space Mountain?",
@@ -158,13 +126,10 @@ def test_query_endpoint_temperature_out_of_range(client):
     assert response.status_code == 422  # Validation error
 
 
-@patch('src.disney.api.routes.get_retrieval_manager')
-def test_health_endpoint_chromadb_unavailable(mock_vector_manager, client):
+def test_health_endpoint_chromadb_unavailable(client, mock_retrieval_manager_routes_patch):
     """Test health endpoint when ChromaDB is unavailable."""
     # Mock vector store manager to raise an exception
-    mock_vector_instance = MagicMock()
-    mock_vector_instance.get_collection_stats.side_effect = Exception("ChromaDB connection failed")
-    mock_vector_manager.return_value = mock_vector_instance
+    mock_retrieval_manager_routes_patch.get_collection_stats.side_effect = Exception("ChromaDB connection failed")
     
     response = client.get("/api/v1/health")
     assert response.status_code == 200
@@ -174,10 +139,10 @@ def test_health_endpoint_chromadb_unavailable(mock_vector_manager, client):
     assert data["dependencies"]["chromadb"] == "unhealthy"
 
 
-def test_query_endpoint_processing_error(client, mock_rag_components):
+def test_query_endpoint_processing_error(client, mock_retrieval_manager_routes_patch):
     """Test query endpoint when processing fails."""
     # Mock vector manager to raise an exception
-    mock_rag_components.query.side_effect = Exception("Chain processing failed")
+    mock_retrieval_manager_routes_patch.query_with_metadata.side_effect = Exception("Chain processing failed")
     
     query_data = {
         "question": "What do customers say about Space Mountain?",
@@ -191,3 +156,19 @@ def test_query_endpoint_processing_error(client, mock_rag_components):
     data = response.json()
     assert "detail" in data
     assert "Chain processing failed" in data["detail"]
+
+
+def test_cache_status_endpoint(client, mock_retrieval_manager_routes_patch):
+    """Test cache status endpoint."""
+    # Mock the stats function to return cached status
+    with patch('disney.api.routes.get_retrieval_manager_stats', return_value={
+        "is_cached": True,
+        "instance_type": "RetrievalManager"
+    }):
+        response = client.get("/api/v1/cache-status")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["cache_status"] == "active"
+        assert data["retrieval_manager_cached"] is True
+        assert data["instance_type"] == "RetrievalManager"

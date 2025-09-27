@@ -255,12 +255,14 @@ class TestQueryParser:
         chromadb_filters = query_parser._build_chromadb_filters(filters)
         
         expected = {
-            "rating": 5,
-            "year": 2023,
-            "month": 6,
-            "branch": "Disneyland",
-            "reviewer_location": "USA",
-            "review_id": "12345"
+            "$and": [
+                {"rating": 5},
+                {"year": 2023},
+                {"month": 6},
+                {"branch": "Disneyland"},
+                {"reviewer_location": "USA"},
+                {"review_id": "12345"}
+            ]
         }
         assert chromadb_filters == expected
     
@@ -271,8 +273,10 @@ class TestQueryParser:
         chromadb_filters = query_parser._build_chromadb_filters(filters)
         
         expected = {
-            "rating": 4,
-            "year": 2022
+            "$and": [
+                {"rating": 4},
+                {"year": 2022}
+            ]
         }
         assert chromadb_filters == expected
     
@@ -307,10 +311,11 @@ class TestQueryParserIntegration:
     @pytest.mark.asyncio
     async def test_query_parser_with_real_llm(self):
         """Test QueryParser with real LLM (requires OpenAI API key)."""
-        # Skip if no API key
+        # Skip if no API key or if using test key
         import os
-        if not os.getenv("OPENAI_API_KEY"):
-            pytest.skip("OpenAI API key not available")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or api_key == "test-key":
+            pytest.skip("OpenAI API key not available or using test key")
         
         config = QueryParserConfig(
             llm_model="gpt-4o-mini",
@@ -336,10 +341,11 @@ class TestQueryParserIntegration:
     @pytest.mark.asyncio
     async def test_query_parser_complex_query(self):
         """Test QueryParser with complex query."""
-        # Skip if no API key
+        # Skip if no API key or if using test key
         import os
-        if not os.getenv("OPENAI_API_KEY"):
-            pytest.skip("OpenAI API key not available")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or api_key == "test-key":
+            pytest.skip("OpenAI API key not available or using test key")
         
         config = QueryParserConfig()
         parser = QueryParser(config)

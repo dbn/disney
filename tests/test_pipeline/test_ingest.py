@@ -9,8 +9,8 @@ from typing import List, Dict, Any
 import tempfile
 import os
 
-from src.disney.pipeline.ingest import DataIngester, get_ingester
-from src.disney.shared.config import settings
+from disney.pipeline.ingest import DataIngester, get_ingester
+from disney.shared.config import settings
 
 
 class TestDataIngesterWithRealChromaDB:
@@ -51,26 +51,28 @@ class TestDataIngesterWithRealChromaDB:
             ],
             'Rating': [5, 4, 3, 5, 4, 2, None],
             'Year_Month': ['2023-06', '2023-07', '2023-08', '2023-09', '2023-10', '2023-11', None],
-            'Branch': ['Disneyland', 'Disney World', 'Disneyland', 'Disney World', 'Disneyland', 'Disney World', 'Unknown']
+            'Branch': ['Disneyland', 'Disney World', 'Disneyland', 'Disney World', 'Disneyland', 'Disney World', 'Unknown'],
+            'Review_ID': ['1', '2', '3', '4', '5', '6', '7'],
+            'Reviewer_Location': ['USA', 'Canada', 'UK', 'Australia', 'Germany', 'France', 'Unknown']
         })
     
     @pytest.fixture
     def data_ingester_with_real_chroma(self, shared_chroma_client, request):
         """Create a DataIngester instance with in-memory ChromaDB using unique collection names."""
         import uuid
-        from src.disney.rag.retrieval_manager import RetrievalManager
+        from disney.rag.retrieval_manager import RetrievalManager
         
         # Generate unique collection name for this test
         test_name = request.node.name
         collection_name = f"test_{test_name}_{uuid.uuid4().hex[:8]}"
         
-        with patch('src.disney.pipeline.ingest.settings') as mock_settings:
+        with patch('disney.pipeline.ingest.settings') as mock_settings:
             mock_settings.chroma_host = "localhost"
             mock_settings.chroma_port = 8000
             mock_settings.data_path = "/test/path/reviews.csv"
             
             # Mock get_retrieval_manager to use shared client with unique collection
-            with patch('src.disney.pipeline.ingest.get_retrieval_manager') as mock_get_manager:
+            with patch('disney.pipeline.ingest.get_retrieval_manager') as mock_get_manager:
                 def create_manager_with_collection(*args, **kwargs):
                     return RetrievalManager(chroma_client=shared_chroma_client, collection_name=collection_name)
                 
@@ -211,7 +213,9 @@ class TestDataIngesterWithRealChromaDB:
             'Review_Text': ['Valid review', '', 'Another valid review'],
             'Rating': [5, 2, 4],
             'Year_Month': ['2023-01', '2023-02', '2023-03'],
-            'Branch': ['Disneyland', 'Disney World', 'Disneyland']
+            'Branch': ['Disneyland', 'Disney World', 'Disneyland'],
+            'Review_ID': ['1', '2', '3'],
+            'Reviewer_Location': ['USA', 'Canada', 'UK']
         })
         
         with patch.object(data_ingester_with_real_chroma, 'load_reviews_data', return_value=problematic_df):
@@ -232,7 +236,7 @@ class TestDataIngesterUnitTests:
     @pytest.fixture
     def mock_settings(self):
         """Mock settings for testing."""
-        with patch('src.disney.pipeline.ingest.settings') as mock_settings:
+        with patch('disney.pipeline.ingest.settings') as mock_settings:
             mock_settings.chroma_host = "localhost"
             mock_settings.chroma_port = 8000
             mock_settings.data_path = "/test/path/reviews.csv"
@@ -251,7 +255,9 @@ class TestDataIngesterUnitTests:
             ],
             'Rating': [5, 4, 3, 2, None],
             'Year_Month': ['2023-06', '2023-07', '2023-08', '2023-09', None],
-            'Branch': ['Disneyland', 'Disney World', 'Disneyland', 'Disney World', 'Unknown']
+            'Branch': ['Disneyland', 'Disney World', 'Disneyland', 'Disney World', 'Unknown'],
+            'Review_ID': ['1', '2', '3', '4', '5'],
+            'Reviewer_Location': ['USA', 'Canada', 'UK', 'Australia', 'Unknown']
         })
     
     @pytest.fixture
@@ -277,7 +283,7 @@ class TestDataIngesterUnitTests:
         assert ingester.data_path == "/test/path/reviews.csv"
         assert ingester.retrieval_manager is None
     
-    @patch('src.disney.pipeline.ingest.pd.read_csv')
+    @patch('disney.pipeline.ingest.pd.read_csv')
     def test_load_reviews_data_success(self, mock_read_csv, data_ingester, sample_dataframe):
         """Test successful loading of reviews data."""
         mock_read_csv.return_value = sample_dataframe
@@ -289,7 +295,7 @@ class TestDataIngesterUnitTests:
         assert len(result) == 5
         pd.testing.assert_frame_equal(result, sample_dataframe)
     
-    @patch('src.disney.pipeline.ingest.pd.read_csv')
+    @patch('disney.pipeline.ingest.pd.read_csv')
     def test_load_reviews_data_file_not_found(self, mock_read_csv, data_ingester):
         """Test loading reviews data when file is not found."""
         mock_read_csv.side_effect = FileNotFoundError("File not found")
@@ -305,7 +311,7 @@ class TestDataIngesterUnitTests:
         assert len(result) == 3
         
         # Check first document
-        assert result[0]['id'] == '0'  # Review ID is now the actual value from the data
+        assert result[0]['id'] == '1'  # Review ID is now the actual value from the data
         assert result[0]['content'] == 'Great experience at Disney!'
         assert result[0]['metadata']['rating'] == 5
         assert result[0]['metadata']['year'] == 2023  # Now returns integer
@@ -342,7 +348,7 @@ class TestDataIngesterUnitTests:
             }
         ]
         
-        with patch('src.disney.pipeline.ingest.get_retrieval_manager', return_value=mock_retrieval_manager):
+        with patch('disney.pipeline.ingest.get_retrieval_manager', return_value=mock_retrieval_manager):
             result = await data_ingester.index_documents(documents, batch_size=1)
         
         assert result['success'] is True
@@ -361,7 +367,7 @@ class TestDataIngesterUnitTests:
         mock_retrieval_manager.add_documents.return_value = True
         
         with patch.object(data_ingester, 'load_reviews_data', return_value=sample_dataframe):
-            with patch('src.disney.pipeline.ingest.get_retrieval_manager', return_value=mock_retrieval_manager):
+            with patch('disney.pipeline.ingest.get_retrieval_manager', return_value=mock_retrieval_manager):
                 result = await data_ingester.run_ingestion_pipeline(batch_size=2)
         
         assert result['success'] is True
@@ -379,7 +385,7 @@ class TestGetIngester:
         import src.disney.pipeline.ingest
         src.disney.pipeline.ingest._ingester = None
         
-        with patch('src.disney.pipeline.ingest.settings') as mock_settings:
+        with patch('disney.pipeline.ingest.settings') as mock_settings:
             mock_settings.chroma_host = "localhost"
             mock_settings.chroma_port = 8000
             mock_settings.data_path = "/test/path"
@@ -396,7 +402,7 @@ class TestGetIngester:
         import src.disney.pipeline.ingest
         src.disney.pipeline.ingest._ingester = None
         
-        with patch('src.disney.pipeline.ingest.settings') as mock_settings:
+        with patch('disney.pipeline.ingest.settings') as mock_settings:
             mock_settings.chroma_host = "localhost"
             mock_settings.chroma_port = 8000
             mock_settings.data_path = "/test/path"
@@ -427,12 +433,12 @@ class TestDataIngesterIntegrationWithRealCSV:
     @pytest.fixture
     def temp_csv_file(self, tmp_path):
         """Create a temporary CSV file for testing."""
-        csv_content = """Review_Text,Rating,Year_Month,Branch
-"Great experience at Disney!",5,"2023-06","Disneyland"
-"The rides were amazing",4,"2023-07","Disney World"
-"Long wait times but worth it",3,"2023-08","Disneyland"
-"Food was delicious",5,"2023-09","Disney World"
-"Staff was very friendly",4,"2023-10","Disneyland"
+        csv_content = """Review_Text,Rating,Year_Month,Branch,Review_ID,Reviewer_Location
+"Great experience at Disney!",5,"2023-06","Disneyland","1","USA"
+"The rides were amazing",4,"2023-07","Disney World","2","Canada"
+"Long wait times but worth it",3,"2023-08","Disneyland","3","UK"
+"Food was delicious",5,"2023-09","Disney World","4","Australia"
+"Staff was very friendly",4,"2023-10","Disneyland","5","Germany"
 """
         csv_file = tmp_path / "test_reviews.csv"
         csv_file.write_text(csv_content)
@@ -442,20 +448,20 @@ class TestDataIngesterIntegrationWithRealCSV:
     async def test_full_pipeline_with_real_csv_and_chromadb(self, temp_csv_file, shared_chroma_client, request):
         """Test the full pipeline with a real CSV file and in-memory ChromaDB."""
         import uuid
-        from src.disney.rag.retrieval_manager import RetrievalManager
+        from disney.rag.retrieval_manager import RetrievalManager
         
         # Generate unique collection name for this test
         test_name = request.node.name
         collection_name = f"integration_{test_name}_{uuid.uuid4().hex[:8]}"
         
         # Mock settings to use temp file
-        with patch('src.disney.pipeline.ingest.settings') as mock_settings:
+        with patch('disney.pipeline.ingest.settings') as mock_settings:
             mock_settings.chroma_host = "localhost"
             mock_settings.chroma_port = 8000
             mock_settings.data_path = temp_csv_file
             
             # Mock get_retrieval_manager to use shared client with unique collection
-            with patch('src.disney.pipeline.ingest.get_retrieval_manager') as mock_get_manager:
+            with patch('disney.pipeline.ingest.get_retrieval_manager') as mock_get_manager:
                 def create_manager_with_collection(*args, **kwargs):
                     return RetrievalManager(chroma_client=shared_chroma_client, collection_name=collection_name)
                 
@@ -510,7 +516,7 @@ class TestRetrievalManagerClientInjection:
     def test_retrieval_manager_with_injected_client(self, shared_chroma_client, request):
         """Test RetrievalManager with injected in-memory client."""
         import uuid
-        from src.disney.rag.retrieval_manager import RetrievalManager
+        from disney.rag.retrieval_manager import RetrievalManager
         
         # Generate unique collection name for this test
         test_name = request.node.name
@@ -566,7 +572,7 @@ class TestRetrievalManagerClientInjection:
     def test_retrieval_manager_client_type_detection(self, shared_chroma_client, request):
         """Test client type detection functionality."""
         import uuid
-        from src.disney.rag.retrieval_manager import RetrievalManager
+        from disney.rag.retrieval_manager import RetrievalManager
         
         # Generate unique collection name for this test
         test_name = request.node.name
@@ -590,7 +596,7 @@ class TestRetrievalManagerClientInjection:
     async def test_retrieval_manager_with_injected_client_document_operations(self, shared_chroma_client, request):
         """Test document operations with injected client."""
         import uuid
-        from src.disney.rag.retrieval_manager import RetrievalManager
+        from disney.rag.retrieval_manager import RetrievalManager
         from langchain.schema import Document
         
         # Generate unique collection name for this test
