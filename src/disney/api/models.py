@@ -18,7 +18,7 @@ class SourceDocument(BaseModel):
     review_id: str = Field(..., description="Unique identifier for the review")
     relevance_score: float = Field(..., ge=0.0, le=1.0, description="Relevance score")
     excerpt: str = Field(..., description="Relevant text excerpt")
-    metadata: Optional[dict] = Field(default=None, description="Additional metadata")
+    metadata: Optional[dict] = Field(default=None, description="Additional metadata including month, year, rating, branch, and reviewer location")
 
 
 class QueryResponse(BaseModel):

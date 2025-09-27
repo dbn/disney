@@ -6,7 +6,6 @@ import httpx
 
 from src.disney.rag.retrieval_manager import RetrievalManager
 from src.disney.rag.generator import AnswerGenerator
-from src.disney.rag.document_processor import DocumentProcessor, DocumentProcessorConfig
 
 
 def test_answer_generator_with_mock_llm():
@@ -54,31 +53,6 @@ def test_answer_generator_with_mock_llm():
             assert result["confidence"] > 0.0
 
 
-def test_document_processor():
-    """Test document processing functionality."""
-    config = DocumentProcessorConfig(
-        chunk_size=100,
-        chunk_overlap=20,
-        min_chunk_size=10,
-        max_chunk_size=200
-    )
-    
-    processor = DocumentProcessor(config)
-    
-    # Test with sample review data
-    sample_reviews = [
-        {
-            "id": "review_1",
-            "content": "This is a sample Disney review about Space Mountain. The ride was amazing and the wait time was reasonable.",
-            "metadata": {"rating": 5, "branch": "Disneyland"}
-        }
-    ]
-    
-    documents = processor.process_reviews_batch(sample_reviews)
-    
-    assert len(documents) > 0
-    assert all(hasattr(doc, 'page_content') for doc in documents)
-    assert all(hasattr(doc, 'metadata') for doc in documents)
 
 
 def test_retrieval_manager_initialization():
@@ -118,36 +92,12 @@ def test_rag_components_integration():
     # Test that we can import all components
     from src.disney.rag.retrieval_manager import RetrievalManager
     from src.disney.rag.generator import AnswerGenerator
-    from src.disney.rag.document_processor import DocumentProcessor, DocumentProcessorConfig
     
     # Test that classes exist and can be referenced
     assert RetrievalManager is not None
     assert AnswerGenerator is not None
-    assert DocumentProcessor is not None
-    assert DocumentProcessorConfig is not None
 
 
-def test_document_processor_config():
-    """Test DocumentProcessorConfig validation."""
-    # Test valid config
-    config = DocumentProcessorConfig(
-        chunk_size=100,
-        chunk_overlap=20,
-        min_chunk_size=10,
-        max_chunk_size=200
-    )
-    
-    assert config.chunk_size == 100
-    assert config.chunk_overlap == 20
-    assert config.min_chunk_size == 10
-    assert config.max_chunk_size == 200
-    
-    # Test default values (using actual defaults from the class)
-    config_default = DocumentProcessorConfig()
-    assert config_default.chunk_size == 1000
-    assert config_default.chunk_overlap == 200
-    assert config_default.min_chunk_size == 100  # Updated to match actual default
-    assert config_default.max_chunk_size == 2000
 
 
 def test_answer_generator_config():

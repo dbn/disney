@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from ..shared.config import settings
 from ..shared.logging import setup_logging
+from .metadata_extractor import MetadataExtractor
 from ..rag.retrieval_manager import get_retrieval_manager
 
 logger = setup_logging("data-pipeline")
@@ -49,7 +50,7 @@ class DataIngester:
             raise
 
     def preprocess_reviews(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
-        """Preprocess reviews data for indexing.
+        """Preprocess reviews data for indexing with improved metadata extraction.
 
         Args:
             df: Reviews DataFrame
@@ -59,6 +60,7 @@ class DataIngester:
         """
         try:
             documents = []
+            extractor = MetadataExtractor()
             
             # Create progress bar for preprocessing
             with tqdm(total=len(df), desc="Preprocessing reviews", unit="review") as pbar:
@@ -69,20 +71,25 @@ class DataIngester:
                         pbar.update(1)
                         continue
                     
-                    # Extract metadata
-                    rating = row.get('Rating', 0)
-                    year_month = str(row.get('Year_Month', ''))
-                    year = year_month.split('-')[0] if year_month and year_month != 'nan' else None
-                    branch = str(row.get('Branch', 'Unknown'))
+                    # Extract metadata using individual functions
+                    rating = extractor.extract_rating(row.get('Rating'))
+                    year = extractor.extract_year(str(row.get('Year_Month', '')))
+                    month = extractor.extract_month(str(row.get('Year_Month', '')))
+                    branch = extractor.extract_branch(row.get('Branch'))
+                    review_id = extractor.extract_review_id(row.get('Review_ID', idx))
+                    location = extractor.extract_reviewer_location(row.get('Reviewer_Location'))
                     
-                    # Create document
+                    # Create document with comprehensive metadata
                     doc = {
-                        'id': f"review_{idx}",
+                        'id': review_id,
                         'content': review_text,
                         'metadata': {
-                            'rating': int(rating) if pd.notna(rating) else 0,
+                            'rating': rating,
                             'year': year,
+                            'month': month,  # NEW: Month metadata
                             'branch': branch,
+                            'review_id': review_id,  # Include review_id in metadata
+                            'reviewer_location': location,  # NEW: Reviewer location
                             'original_index': idx
                         }
                     }

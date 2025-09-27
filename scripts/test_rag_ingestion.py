@@ -11,76 +11,14 @@ from unittest.mock import patch
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from disney.rag.document_processor import DocumentProcessor, DocumentProcessorConfig
 from disney.pipeline.ingest import DataIngester
 
 
-async def test_document_processor():
-    """Test the document processor with sample Disney review data."""
-    print("🧪 Testing Document Processor...")
-    
-    # Create sample review data
-    sample_reviews = [
-        {
-            'id': 'review_1',
-            'content': 'Space Mountain was absolutely amazing! The wait was worth it. 5 stars!',
-            'rating': 5,
-            'branch': 'Disneyland',
-            'year': 2023
-        },
-        {
-            'id': 'review_2', 
-            'content': 'The Haunted Mansion was disappointing. Too crowded and overpriced.',
-            'rating': 2,
-            'branch': 'Disney World',
-            'year': 2023
-        }
-    ]
-    
-    # Create document processor
-    config = DocumentProcessorConfig(
-        chunk_size=200,
-        chunk_overlap=50,
-        min_chunk_size=10,
-        max_chunk_size=1000
-    )
-    processor = DocumentProcessor(config)
-    
-    # Process reviews
-    documents = processor.process_reviews_batch(sample_reviews)
-    
-    print(f"✅ Processed {len(sample_reviews)} reviews into {len(documents)} documents")
-    
-    # Debug: Check why no documents are being created
-    if len(documents) == 0:
-        print("🔍 Debug: No documents created, checking individual review processing...")
-        for i, review in enumerate(sample_reviews):
-            print(f"  Processing review {i+1}: {review}")
-            docs = processor.process_review(review)
-            print(f"    -> Created {len(docs)} documents")
-            if len(docs) > 0:
-                print(f"    -> First doc content: {docs[0].page_content[:100]}...")
-                print(f"    -> First doc metadata: {docs[0].metadata}")
-    
-    # Print document details
-    for i, doc in enumerate(documents):
-        print(f"  Document {i+1}:")
-        print(f"    Content: {doc.page_content[:100]}...")
-        print(f"    Metadata: {doc.metadata}")
-        print()
-    
-    # Get processing stats
-    stats = processor.get_processing_stats(documents)
-    print(f"📊 Processing Stats: {stats}")
-    
-    return documents
-
-
 async def test_ingestion_pipeline():
-    """Test the ingestion pipeline (without vector database)."""
-    print("\n🧪 Testing Ingestion Pipeline...")
+    """Test the complete ingestion pipeline."""
+    print("🧪 Testing Ingestion Pipeline...")
     
-    # Mock vector database for testing
+    # Mock vector database
     class MockVectorDB:
         async def add_documents(self, documents):
             print(f"  📝 Mock: Would add {len(documents)} documents")
@@ -94,23 +32,21 @@ async def test_ingestion_pipeline():
     ingester = DataIngester(chroma_host="localhost", chroma_port=8000)
     ingester.retrieval_manager = vector_db
     
-    # Test CSV loading (using sample data)
-    print("  📁 Testing CSV loader...")
-    # DataIngester doesn't have a separate csv_loader, it loads data directly
-    
-    # Create a temporary CSV file for testing
+    # Create temporary CSV file for testing
     import tempfile
     import pandas as pd
     
     sample_data = pd.DataFrame({
         'Review_Text': [
-            'Space Mountain was amazing! 5 stars!',
-            'The Haunted Mansion was disappointing.',
-            'Pirates of the Caribbean was fun for the whole family.'
+            'Space Mountain was absolutely amazing! The wait was worth it.',
+            'The Haunted Mansion was disappointing. Too crowded.',
+            'Pirates of the Caribbean was fun but the line was long.'
         ],
         'Rating': [5, 2, 4],
+        'Year_Month': ['2023-6', '2023-7', '2023-8'],
         'Branch': ['Disneyland', 'Disney World', 'Disneyland'],
-        'Year_Month': [2023, 2023, 2023]
+        'Review_ID': ['1', '2', '3'],
+        'Reviewer_Location': ['USA', 'Canada', 'UK']
     })
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
@@ -119,7 +55,6 @@ async def test_ingestion_pipeline():
     
     try:
         # Test the data ingester with the temp file
-        # We need to mock the data path for the ingester
         with patch('disney.pipeline.ingest.settings') as mock_settings:
             mock_settings.data_path = temp_file
             mock_settings.chroma_host = "localhost"
@@ -133,30 +68,56 @@ async def test_ingestion_pipeline():
         # Clean up temp file
         Path(temp_file).unlink()
     
-    print("✅ Ingestion pipeline test completed")
+    return result
+
+
+async def test_metadata_extraction():
+    """Test metadata extraction functionality."""
+    print("🧪 Testing Metadata Extraction...")
+    
+    from disney.pipeline.metadata_extractor import MetadataExtractor
+    
+    extractor = MetadataExtractor()
+    
+    # Test sample data
+    sample_data = {
+        'Rating': 4,
+        'Year_Month': '2019-4',
+        'Branch': 'Disneyland_HongKong',
+        'Review_ID': '670772142',
+        'Reviewer_Location': 'Australia'
+    }
+    
+    metadata = extractor.extract_all_metadata(sample_data)
+    print(f"  ✅ Extracted metadata: {metadata}")
+    
+    # Test month extraction specifically
+    print(f"  📅 Month extraction test:")
+    print(f"    '2019-4' -> month: {extractor.extract_month('2019-4')}")
+    print(f"    '2020-12' -> month: {extractor.extract_month('2020-12')}")
+    print(f"    '2021-6' -> month: {extractor.extract_month('2021-6')}")
+    
+    return metadata
 
 
 async def main():
-    """Run all tests."""
-    print("🚀 Testing RAG-based Ingestion Functionality\n")
+    """Main test function."""
+    print("🚀 Starting RAG Ingestion Tests...")
+    print()
     
     try:
-        # Test document processor
-        documents = await test_document_processor()
+        # Test metadata extraction
+        metadata = await test_metadata_extraction()
+        print()
         
         # Test ingestion pipeline
-        await test_ingestion_pipeline()
+        result = await test_ingestion_pipeline()
+        print()
         
-        print("\n🎉 All tests completed successfully!")
-        print("\n📋 Summary:")
-        print("  ✅ Document processor with LangChain integration")
-        print("  ✅ Text splitting and metadata extraction")
-        print("  ✅ CSV loading and processing")
-        print("  ✅ Batch indexing pipeline")
-        print("  ✅ Integration with RAG package")
+        print("✅ All tests completed successfully!")
         
     except Exception as e:
-        print(f"\n❌ Test failed: {str(e)}")
+        print(f"❌ Test failed: {str(e)}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

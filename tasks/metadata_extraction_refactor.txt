@@ -1,0 +1,339 @@
+# Metadata Extraction Refactoring and Month Addition
+
+## Overview
+This task involves refactoring the metadata extraction functionality in the Disney reviews pipeline to:
+1. Add month as a separate metadata field extracted from the Year_Month column
+2. Refactor data extraction into separate, testable functions
+3. Improve code organization and maintainability
+4. Add comprehensive tests for each extraction function
+
+## Current State Analysis
+
+### Current Data Structure
+- **Year_Month Column Format**: `YYYY-M` (e.g., "2019-4", "2020-12")
+- **Current Extraction**: Only year is extracted, month is ignored
+- **Location**: `src/disney/pipeline/ingest.py` - `preprocess_reviews()` method
+
+### Current Issues
+1. **Monolithic extraction**: All metadata extraction happens in one method
+2. **No month extraction**: Month information is lost
+3. **Hard to test**: Extraction logic is embedded in the main pipeline
+4. **No validation**: No validation of extracted metadata
+5. **Code duplication**: Similar extraction logic exists in DocumentProcessor
+
+## Goals
+1. **Add month metadata**: Extract month from Year_Month column
+2. **Refactor extraction**: Create separate functions for each metadata field
+3. **Improve testability**: Make each extraction function independently testable
+4. **Add validation**: Validate extracted metadata values
+5. **Consolidate logic**: Unify extraction logic between pipeline and DocumentProcessor
+6. **Maintain backward compatibility**: Ensure existing functionality continues to work
+
+## Implementation Plan
+
+### Phase 1: Create Metadata Extraction Module
+**File**: `src/disney/shared/metadata_extractor.py`
+
+**Key Components**:
+```python
+class MetadataExtractor:
+    """Unified metadata extraction for Disney reviews."""
+    
+    def extract_rating(self, value: Any) -> Optional[int]:
+        """Extract and validate rating (1-5)."""
+        
+    def extract_year(self, year_month: str) -> Optional[int]:
+        """Extract year from Year_Month format (YYYY-M)."""
+        
+    def extract_month(self, year_month: str) -> Optional[int]:
+        """Extract month from Year_Month format (YYYY-M)."""
+        
+    def extract_branch(self, value: Any) -> str:
+        """Extract and normalize branch name."""
+        
+    def extract_review_id(self, value: Any) -> str:
+        """Extract and format review ID."""
+        
+    def extract_reviewer_location(self, value: Any) -> Optional[str]:
+        """Extract reviewer location."""
+        
+    def validate_rating(self, rating: int) -> bool:
+        """Validate rating is between 1-5."""
+        
+    def validate_year(self, year: int) -> bool:
+        """Validate year is reasonable (2000-current)."""
+        
+    def validate_month(self, month: int) -> bool:
+        """Validate month is between 1-12."""
+        
+    def normalize_branch(self, branch: str) -> str:
+        """Normalize branch names to standard format."""
+```
+
+### Phase 2: Refactor Pipeline Integration
+**File**: `src/disney/pipeline/ingest.py`
+
+**Changes**:
+1. **Import MetadataExtractor**: Add import for the new extraction module
+2. **Refactor preprocess_reviews()**: Use individual extraction functions
+3. **Add month extraction**: Include month in metadata
+4. **Add validation**: Validate extracted metadata before creating documents
+5. **Improve error handling**: Handle extraction errors gracefully
+
+**Updated preprocess_reviews() method**:
+```python
+def preprocess_reviews(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """Preprocess reviews data for indexing with improved metadata extraction."""
+    try:
+        documents = []
+        extractor = MetadataExtractor()
+        
+        with tqdm(total=len(df), desc="Preprocessing reviews", unit="review") as pbar:
+            for idx, row in df.iterrows():
+                # Extract review text
+                review_text = str(row.get('Review_Text', '')).strip()
+                if not review_text or review_text == 'nan':
+                    pbar.update(1)
+                    continue
+                
+                # Extract metadata using individual functions
+                rating = extractor.extract_rating(row.get('Rating'))
+                year = extractor.extract_year(str(row.get('Year_Month', '')))
+                month = extractor.extract_month(str(row.get('Year_Month', '')))
+                branch = extractor.extract_branch(row.get('Branch'))
+                review_id = extractor.extract_review_id(row.get('Review_ID', idx))
+                location = extractor.extract_reviewer_location(row.get('Reviewer_Location'))
+                
+                # Create document with comprehensive metadata
+                doc = {
+                    'id': review_id,
+                    'content': review_text,
+                    'metadata': {
+                        'rating': rating,
+                        'year': year,
+                        'month': month,  # NEW: Month metadata
+                        'branch': branch,
+                        'reviewer_location': location,  # NEW: Reviewer location
+                        'original_index': idx
+                    }
+                }
+                
+                documents.append(doc)
+                pbar.update(1)
+        
+        logger.info(f"Preprocessed {len(documents)} review documents")
+        return documents
+        
+    except Exception as e:
+        logger.error(f"Error preprocessing reviews: {str(e)}")
+        raise
+```
+
+### Phase 3: Update DocumentProcessor Integration
+**File**: `src/disney/rag/document_processor.py`
+
+**Changes**:
+1. **Use unified extractor**: Replace existing MetadataExtractor with shared version
+2. **Add month support**: Support month metadata in text-based extraction
+3. **Maintain compatibility**: Keep existing functionality working
+
+**Updated MetadataExtractor in DocumentProcessor**:
+```python
+from ..shared.metadata_extractor import MetadataExtractor as BaseMetadataExtractor
+
+class MetadataExtractor(BaseMetadataExtractor):
+    """Extended metadata extractor for text-based extraction."""
+    
+    def extract_rating_from_text(self, text: str) -> Optional[int]:
+        """Extract rating from text content."""
+        
+    def extract_year_from_text(self, text: str) -> Optional[int]:
+        """Extract year from text content."""
+        
+    def extract_month_from_text(self, text: str) -> Optional[int]:
+        """Extract month from text content."""
+        
+    def extract_branch_from_text(self, text: str) -> Optional[str]:
+        """Extract branch from text content."""
+```
+
+### Phase 4: Comprehensive Testing
+**File**: `tests/test_shared/test_metadata_extractor.py`
+
+**Test Coverage**:
+```python
+class TestMetadataExtractor:
+    """Test metadata extraction functions."""
+    
+    def test_extract_rating_valid(self):
+        """Test rating extraction with valid values."""
+        
+    def test_extract_rating_invalid(self):
+        """Test rating extraction with invalid values."""
+        
+    def test_extract_year_valid(self):
+        """Test year extraction with valid Year_Month formats."""
+        
+    def test_extract_year_invalid(self):
+        """Test year extraction with invalid formats."""
+        
+    def test_extract_month_valid(self):
+        """Test month extraction with valid Year_Month formats."""
+        
+    def test_extract_month_invalid(self):
+        """Test month extraction with invalid formats."""
+        
+    def test_extract_branch_normalization(self):
+        """Test branch name normalization."""
+        
+    def test_validation_functions(self):
+        """Test all validation functions."""
+        
+    def test_edge_cases(self):
+        """Test edge cases and error conditions."""
+```
+
+**File**: `tests/test_pipeline/test_metadata_extraction.py`
+
+**Integration Tests**:
+```python
+class TestMetadataExtractionIntegration:
+    """Test metadata extraction in pipeline context."""
+    
+    def test_month_extraction_in_pipeline(self):
+        """Test that month is properly extracted in pipeline."""
+        
+    def test_metadata_validation_in_pipeline(self):
+        """Test metadata validation in pipeline."""
+        
+    def test_error_handling_in_extraction(self):
+        """Test error handling during extraction."""
+        
+    def test_backward_compatibility(self):
+        """Test that existing functionality still works."""
+```
+
+### Phase 5: Update API Models
+**File**: `src/disney/api/models.py`
+
+**Changes**:
+1. **Add month to metadata**: Include month in SourceDocument metadata
+2. **Update query filters**: Support month-based filtering
+3. **Add validation**: Validate month values in API requests
+
+**Updated SourceDocument**:
+```python
+class SourceDocument(BaseModel):
+    content: str = Field(..., description="Document content")
+    score: float = Field(..., description="Relevance score")
+    metadata: Optional[dict] = Field(default=None, description="Additional metadata including month")
+```
+
+### Validation Functions
+```python
+def validate_month(self, month: int) -> bool:
+    """Validate month is between 1-12."""
+    return 1 <= month <= 12
+
+def validate_year(self, year: int) -> bool:
+    """Validate year is reasonable (2000-current)."""
+    current_year = datetime.now().year
+    return 2000 <= year <= current_year
+```
+
+### Error Handling Strategy
+1. **Graceful degradation**: If extraction fails, use default values
+2. **Logging**: Log extraction errors for debugging
+3. **Validation**: Validate extracted values before use
+4. **Fallbacks**: Provide sensible defaults for missing data
+
+## Testing Strategy
+
+### Unit Tests
+- **Individual functions**: Test each extraction function in isolation
+- **Validation functions**: Test all validation logic
+- **Edge cases**: Test with malformed data, empty values, etc.
+- **Error handling**: Test error conditions and recovery
+
+### Integration Tests
+- **Pipeline integration**: Test extraction in the full pipeline
+- **DocumentProcessor integration**: Test with text-based extraction
+- **API integration**: Test metadata in API responses
+- **Backward compatibility**: Ensure existing functionality works
+
+### Performance Tests
+- **Large datasets**: Test with full Disney reviews dataset
+- **Memory usage**: Monitor memory usage during extraction
+- **Processing time**: Measure extraction performance
+
+## Success Criteria
+
+### Functional Requirements
+1. ✅ **Month extraction**: Month is properly extracted from Year_Month column
+2. ✅ **Separate functions**: Each metadata field has its own extraction function
+3. ✅ **Validation**: All extracted metadata is validated
+4. ✅ **Error handling**: Graceful handling of extraction errors
+5. ✅ **Backward compatibility**: Existing functionality continues to work
+
+### Non-Functional Requirements
+1. ✅ **Testability**: Each function can be tested independently
+2. ✅ **Maintainability**: Code is well-organized and documented
+3. ✅ **Performance**: No significant performance degradation
+4. ✅ **Reliability**: Robust error handling and validation
+
+### Quality Metrics
+1. ✅ **Test coverage**: >90% code coverage for extraction functions
+2. ✅ **Documentation**: All functions are properly documented
+3. ✅ **Type hints**: All functions have proper type annotations
+4. ✅ **Error handling**: All error conditions are handled
+
+## Migration Strategy
+
+### Phase 1: Create New Module
+1. Create `src/disney/shared/metadata_extractor.py`
+2. Implement all extraction functions
+3. Add comprehensive unit tests
+4. Ensure all tests pass
+
+### Phase 2: Update Pipeline
+1. Update `src/disney/pipeline/ingest.py` to use new extractor
+2. Add month extraction to metadata
+3. Update integration tests
+4. Verify pipeline still works
+
+### Phase 3: Update DocumentProcessor
+1. Update `src/disney/rag/document_processor.py`
+2. Use shared extractor where possible
+3. Add month support to text-based extraction
+4. Update tests
+
+### Phase 4: Update API and Tests
+1. Update API models to include month
+2. Update all test files
+3. Run full test suite
+4. Verify backward compatibility
+
+## Future Enhancements
+
+### Potential Improvements
+1. **Season extraction**: Extract season from month (Spring, Summer, Fall, Winter)
+2. **Holiday detection**: Detect holidays from month/day combinations
+3. **Weather correlation**: Correlate month with weather patterns
+4. **Crowd level prediction**: Use month for crowd level predictions
+
+### Additional Metadata Fields
+1. **Reviewer demographics**: Age, gender, etc.
+2. **Visit duration**: Length of stay
+3. **Group size**: Number of people in party
+4. **Visit purpose**: Vacation, business, etc.
+
+## Conclusion
+
+This refactoring will significantly improve the metadata extraction system by:
+1. **Adding month support**: Extracting month from Year_Month column
+2. **Improving organization**: Separating extraction logic into individual functions
+3. **Enhancing testability**: Making each function independently testable
+4. **Maintaining compatibility**: Ensuring existing functionality continues to work
+5. **Preparing for future**: Setting up infrastructure for additional metadata fields
+
+The implementation follows best practices for code organization, testing, and error handling while maintaining backward compatibility with the existing system.

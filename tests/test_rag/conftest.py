@@ -12,7 +12,6 @@ from langchain.schema import Document
 from unittest.mock import patch
 
 from disney.pipeline.ingest import DataIngester
-from disney.rag.document_processor import DocumentProcessorConfig
 
 
 @pytest.fixture
@@ -100,15 +99,6 @@ def data_ingester():
     return DataIngester(chroma_host="localhost", chroma_port=8000)
 
 
-@pytest.fixture
-def doc_processor_config():
-    """Default document processor configuration for tests."""
-    return DocumentProcessorConfig(
-        chunk_size=200,
-        chunk_overlap=50,
-        min_chunk_size=10,
-        max_chunk_size=1000
-    )
 
 
 @pytest.fixture
@@ -201,22 +191,6 @@ def mock_csv_loader():
     return mock_loader
 
 
-@pytest.fixture
-def mock_document_processor():
-    """Mock document processor for testing."""
-    mock_processor = MagicMock()
-    mock_processor.process_reviews_batch.return_value = [
-        Document(
-            page_content="Space Mountain was amazing!",
-            metadata={'id': 'review_1', 'rating': 5}
-        )
-    ]
-    mock_processor.get_processing_stats.return_value = {
-        'total_documents': 1,
-        'avg_chunk_size': 25,
-        'total_chunks': 1
-    }
-    return mock_processor
 
 
 @pytest.fixture

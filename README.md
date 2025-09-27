@@ -76,12 +76,6 @@ The system implements a complete RAG (Retrieval-Augmented Generation) pipeline u
   - OpenAI LLM for answer generation
   - Async query processing with `rag_chain.ainvoke()`
 
-#### **Document Processing** (`src/disney/rag/document_processor.py`)
-- **Purpose**: Process and chunk Disney review data
-- **Features**:
-  - CSV loading and preprocessing
-  - Text chunking with configurable parameters
-  - Metadata extraction and enrichment
   - Progress tracking with tqdm
 
 #### **Prompt Template** (`src/disney/rag/prompt_template.py`)

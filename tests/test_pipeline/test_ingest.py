@@ -163,7 +163,8 @@ class TestDataIngesterWithRealChromaDB:
                 if 'Great experience' in doc.page_content:
                     assert doc.metadata['rating'] == 5
                     assert doc.metadata['branch'] == 'Disneyland'
-                    assert doc.metadata['year'] == '2023'
+                    assert doc.metadata['year'] == 2023  # Now returns integer
+                    assert doc.metadata['month'] == 6  # NEW: Month should be present (from 2023-06)
     
     @pytest.mark.asyncio
     async def test_duplicate_ingestion_handling(self, data_ingester_with_real_chroma, sample_dataframe):
@@ -304,10 +305,11 @@ class TestDataIngesterUnitTests:
         assert len(result) == 3
         
         # Check first document
-        assert result[0]['id'] == 'review_0'
+        assert result[0]['id'] == '0'  # Review ID is now the actual value from the data
         assert result[0]['content'] == 'Great experience at Disney!'
         assert result[0]['metadata']['rating'] == 5
-        assert result[0]['metadata']['year'] == '2023'
+        assert result[0]['metadata']['year'] == 2023  # Now returns integer
+        assert result[0]['metadata']['month'] == 6  # NEW: Month should be present (from 2023-06)
         assert result[0]['metadata']['branch'] == 'Disneyland'
         assert result[0]['metadata']['original_index'] == 0
     
