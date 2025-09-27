@@ -79,6 +79,12 @@ class DataIngester:
                     review_id = extractor.extract_review_id(row.get('Review_ID', idx))
                     location = extractor.extract_reviewer_location(row.get('Reviewer_Location'))
                     
+                    # Skip the row if any metadata is absent (None or empty string)
+                    required_metadata = [rating, year, month, branch, review_id, location]
+                    if any(m is None or m == '' for m in required_metadata):
+                        pbar.update(1)
+                        continue
+
                     # Create document with comprehensive metadata
                     doc = {
                         'id': review_id,

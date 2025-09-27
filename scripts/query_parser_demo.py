@@ -34,7 +34,7 @@ async def demo_query_parser():
         # "What do people think about the new attraction in March 2024?",
         # "Find review 12345",
         # "Show me 4-star reviews from Disneyland-HongKong in summer",
-        "What do customers from europe say about Space Mountain wait times?"
+        "What do customers from Genmrany say in general?"
     ]
     
     for i, query in enumerate(test_queries, 1):

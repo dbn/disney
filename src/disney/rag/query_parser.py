@@ -142,22 +142,28 @@ class QueryParser:
         Returns:
             Dictionary suitable for ChromaDB where clause
         """
-        chromadb_filters = {}
+        conditions = []
         
         if filters.rating is not None:
-            chromadb_filters["rating"] = filters.rating
+            conditions.append({"rating": filters.rating})
         if filters.year is not None:
-            chromadb_filters["year"] = filters.year
+            conditions.append({"year": filters.year})
         if filters.month is not None:
-            chromadb_filters["month"] = filters.month
+            conditions.append({"month": filters.month})
         if filters.branch is not None:
-            chromadb_filters["branch"] = filters.branch
+            conditions.append({"branch": filters.branch})
         if filters.reviewer_location is not None:
-            chromadb_filters["reviewer_location"] = filters.reviewer_location
+            conditions.append({"reviewer_location": filters.reviewer_location})
         if filters.review_id is not None:
-            chromadb_filters["review_id"] = filters.review_id
-            
-        return chromadb_filters
+            conditions.append({"review_id": filters.review_id})
+        
+        # Return appropriate format based on number of conditions
+        if not conditions:
+            return {}
+        elif len(conditions) == 1:
+            return conditions[0]
+        else:
+            return {"$and": conditions}
     
     def _handle_validation_error(self, query: str, error: str) -> QueryParseResult:
         """Handle Pydantic validation errors.

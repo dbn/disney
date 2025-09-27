@@ -18,49 +18,6 @@ logger = setup_logging("customer-experience-api")
 router = APIRouter()
 
 
-@router.post("/query", response_model=QueryResponse)
-async def query_reviews(
-    request: QueryRequest,
-    vector_manager: RetrievalManager = Depends(get_retrieval_manager)
-):
-    """Submit a question and get LLM result back."""
-    start_time = time.time()
-    
-    try:
-        logger.info(f"Processing query: {request.question[:100]}...")
-        
-        # Use the cached RetrievalManager instance
-        result = await vector_manager.query(request.question)
-        
-        # Format response
-        sources = []
-        for doc in result["context"][:request.context_limit]:
-            sources.append(SourceDocument(
-                review_id=doc.get("id", "unknown"),
-                relevance_score=doc.get("relevance_score", 0.0),
-                excerpt=doc.get("content", "")[:200] + "..." if len(doc.get("content", "")) > 200 else doc.get("content", ""),
-                metadata=doc.get("metadata", {})
-            ))
-        
-        processing_time_ms = (time.time() - start_time) * 1000
-        
-        logger.info(f"Query processed successfully in {processing_time_ms:.2f}ms")
-        
-        return QueryResponse(
-            answer=result["answer"],
-            sources=sources,
-            confidence=0.8,
-            processing_time_ms=processing_time_ms
-        )
-        
-    except Exception as e:
-        logger.error(f"Error processing query: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing query: {str(e)}"
-        )
-
-
 @router.get("/health", response_model=HealthResponse)
 async def health_check(
     vector_manager: RetrievalManager = Depends(get_retrieval_manager)
@@ -128,3 +85,50 @@ async def get_status():
             detail=f"Status check failed: {str(e)}"
         )
 
+
+@router.post("/query", response_model=QueryResponse)
+async def query_reviews_enhanced(
+    request: QueryRequest,
+    vector_manager: RetrievalManager = Depends(get_retrieval_manager)
+):
+    """Enhanced query endpoint with metadata extraction."""
+    start_time = time.time()
+    
+    try:
+        logger.info(f"Processing enhanced query: {request.question[:100]}...")
+        
+        # Use the cached RetrievalManager instance
+        
+        # Use enhanced query method with metadata extraction
+        answer = await vector_manager.query_with_metadata(request.question)
+        
+        return answer
+
+    except Exception as e:
+        logger.error(f"Enhanced query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cache-status")
+async def get_cache_status():
+    """Get RetrievalManager cache status.
+    
+    This endpoint provides visibility into the cache state,
+    useful for debugging and monitoring.
+    """
+    try:
+        stats = get_retrieval_manager_stats()
+        return {
+            "cache_status": "active" if stats["is_cached"] else "inactive",
+            "retrieval_manager_cached": stats["is_cached"],
+            "instance_type": stats["instance_type"],
+            "message": "RetrievalManager is cached and ready" if stats["is_cached"] else "RetrievalManager not yet initialized"
+        }
+    except Exception as e:
+        logger.error(f"Cache status check failed: {str(e)}")
+        return {
+            "cache_status": "error",
+            "retrieval_manager_cached": False,
+            "instance_type": None,
+            "error": str(e)
+        }

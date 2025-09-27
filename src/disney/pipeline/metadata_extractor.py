@@ -112,7 +112,7 @@ class MetadataExtractor:
             return 'Unknown'
         
         branch = str(value).strip()
-        return self.normalize_branch(branch)
+        return branch
     
     def extract_review_id(self, value: Any) -> str:
         """Extract and format review ID.
@@ -175,44 +175,6 @@ class MetadataExtractor:
             True if valid, False otherwise
         """
         return 1 <= month <= 12
-    
-    def normalize_branch(self, branch: str) -> str:
-        """Normalize branch names to standard format.
-        
-        Args:
-            branch: Raw branch name
-            
-        Returns:
-            Normalized branch name
-        """
-        if not branch:
-            return 'Unknown'
-        
-        branch_lower = branch.lower().strip()
-        
-        # Map common variations to standard names
-        branch_mapping = {
-            'disneyland': 'Disneyland',
-            'disney world': 'Disney World',
-            'disneyland_hongkong': 'Disneyland Hong Kong',
-            'disneyland hong kong': 'Disneyland Hong Kong',
-            'disneyland paris': 'Disneyland Paris',
-            'tokyo disneyland': 'Tokyo Disneyland',
-            'tokyo disney': 'Tokyo Disneyland',
-            'unknown': 'Unknown'
-        }
-        
-        # Check for exact matches first
-        if branch_lower in branch_mapping:
-            return branch_mapping[branch_lower]
-        
-        # Check for partial matches
-        for key, value in branch_mapping.items():
-            if key in branch_lower:
-                return value
-        
-        # If no match found, return the original with proper capitalization
-        return branch.title()
     
     def extract_all_metadata(self, row_data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract all metadata from a single row of data.
