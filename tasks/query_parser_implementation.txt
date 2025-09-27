@@ -1,0 +1,330 @@
+# Task: Implement Query Parser Component for Metadata Extraction
+
+## Overview
+Implement a query parser component that uses LLM to extract metadata from user queries and convert them into structured filters for ChromaDB retrieval. This will enhance the existing RAG system by allowing users to query with natural language that includes specific metadata constraints.
+
+## Current State
+- Existing RAG system with RetrievalManager
+- Document ingestion with metadata: `rating`, `year`, `branch`, `original_index`
+- ChromaDB integration with collection-based isolation
+- LangChain-based query processing
+
+## Goals
+1. Extract metadata from natural language queries using LLM
+2. Convert extracted metadata to ChromaDB where clause filters
+3. Rewrite queries for better semantic search
+4. Integrate seamlessly with existing RetrievalManager
+5. Handle edge cases gracefully
+6. Reuse existing LangChain infrastructure
+
+## Implementation Plan
+
+### Phase 1: Define Query Parser Interface and Models
+**File:** `src/disney/rag/query_parser.py`
+
+**Components:**
+1. **QueryParserConfig** - Configuration class
+2. **QueryParser** - Main parser class
+3. **QueryParseResult** - Result data structure
+4. **MetadataExtractor** - LLM-based metadata extraction
+
+**Data Structures:**
+```python
+@dataclass
+class QueryParseResult:
+    original_query: str
+    search_query: str
+    filters: Dict[str, Any]
+    confidence: float
+    extracted_metadata: Dict[str, Any]
+    parsing_errors: List[str]
+
+@dataclass
+class QueryParserConfig:
+    llm_model: str = "gpt-4o-mini"
+    temperature: float = 0.1
+    max_tokens: int = 500
+    confidence_threshold: float = 0.7
+    enable_metadata_extraction: bool = True
+    enable_query_rewriting: bool = True
+```
+
+### Phase 2: Implement Metadata Extraction Prompt
+**File:** `src/disney/rag/prompts.py` (extend existing)
+
+**Prompt Template:**
+```python
+METADATA_EXTRACTION_PROMPT = """
+You are a query parser for a Disney customer review analysis system. Extract metadata and rewrite queries for better semantic search.
+
+Available metadata fields:
+- rating: Integer (1-5) - Customer rating
+- year: String (e.g., "2023", "2022") - Review year
+- branch: String ("Disneyland", "Disney World", "Unknown") - Disney location
+- original_index: Integer - Original review index
+
+User Query: "{query}"
+
+Extract metadata and rewrite the query. Return ONLY a valid JSON object with this exact structure:
+{{
+    "search_query": "rewritten semantic query for better search",
+    "filters": {{
+        "rating": 5,  // if rating mentioned (1-5)
+        "year": "2023",  // if year mentioned
+        "branch": "Disneyland"  // if location mentioned
+    }},
+    "confidence": 0.85,  // confidence in extraction (0.0-1.0)
+    "reasoning": "Brief explanation of extraction"
+}}
+
+Rules:
+1. Only include filters for explicitly mentioned metadata
+2. If no metadata is mentioned, return empty filters: {{}}
+3. For ratings, extract the specific number mentioned
+4. For years, extract 4-digit year format
+5. For branches, use exact values: "Disneyland", "Disney World", or "Unknown"
+6. Rewrite search_query to be more semantic and searchable
+7. Set confidence based on how clear the metadata extraction is
+8. Return ONLY the JSON, no other text
+"""
+```
+
+### Phase 3: Implement Core Query Parser
+**File:** `src/disney/rag/query_parser.py`
+
+**Key Methods:**
+```python
+class QueryParser:
+    def __init__(self, config: QueryParserConfig):
+        self.config = config
+        self.llm = ChatOpenAI(
+            model=config.llm_model,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens
+        )
+        self.prompt_template = ChatPromptTemplate.from_template(METADATA_EXTRACTION_PROMPT)
+        self.chain = self.prompt_template | self.llm | StrOutputParser()
+    
+    async def parse_query(self, query: str) -> QueryParseResult:
+        """Parse user query and extract metadata."""
+        
+    def _validate_extracted_metadata(self, metadata: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+        """Validate and clean extracted metadata."""
+        
+    def _build_chromadb_filters(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert metadata to ChromaDB where clause format."""
+        
+    def _handle_parsing_errors(self, result: Dict[str, Any]) -> QueryParseResult:
+        """Handle cases where LLM parsing fails."""
+```
+
+### Phase 4: Integrate with RetrievalManager
+**File:** `src/disney/rag/retrieval_manager.py`
+
+**New Methods:**
+```python
+class RetrievalManager:
+    def __init__(self, ..., query_parser: Optional[QueryParser] = None):
+        # ... existing init
+        self.query_parser = query_parser or QueryParser()
+    
+    async def query_with_metadata(self, query: str) -> str:
+        """Enhanced query method with metadata extraction."""
+        # Parse query for metadata
+        parse_result = await self.query_parser.parse_query(query)
+        
+        # Use metadata filters if available
+        if parse_result.filters:
+            # Use filtered search
+            docs = self.vectorstore.similarity_search_with_score(
+                parse_result.search_query,
+                k=5,
+                filter=parse_result.filters
+            )
+        else:
+            # Use regular search
+            docs = self.vectorstore.similarity_search_with_score(
+                parse_result.search_query,
+                k=5
+            )
+        
+        # Process with RAG chain
+        return await self._process_with_rag_chain(docs, parse_result.search_query)
+    
+    def get_enhanced_context(
+        self, 
+        query: str, 
+        n_results: int = 5,
+        use_metadata_extraction: bool = True
+    ) -> List[Dict[str, Any]]:
+        """Enhanced context retrieval with metadata filtering."""
+```
+
+### Phase 5: Edge Case Handling
+**File:** `src/disney/rag/query_parser.py`
+
+**Edge Cases:**
+1. **No metadata extracted**: Return empty filters, use original query
+2. **Invalid metadata format**: Fallback to original query, log warning
+3. **LLM parsing failure**: Use original query, return error details
+4. **Confidence too low**: Use original query, log warning
+5. **Empty query**: Return error result
+6. **Malformed JSON**: Retry with simplified prompt
+
+**Implementation:**
+```python
+async def parse_query(self, query: str) -> QueryParseResult:
+    """Parse user query with comprehensive error handling."""
+    if not query or not query.strip():
+        return QueryParseResult(
+            original_query=query,
+            search_query="",
+            filters={},
+            confidence=0.0,
+            extracted_metadata={},
+            parsing_errors=["Empty query provided"]
+        )
+    
+    try:
+        # Attempt LLM parsing
+        result_json = await self.chain.ainvoke({"query": query.strip()})
+        result = json.loads(result_json)
+        
+        # Validate and clean metadata
+        clean_metadata, errors = self._validate_extracted_metadata(
+            result.get("filters", {})
+        )
+        
+        # Build ChromaDB filters
+        chromadb_filters = self._build_chromadb_filters(clean_metadata)
+        
+        return QueryParseResult(
+            original_query=query,
+            search_query=result.get("search_query", query),
+            filters=chromadb_filters,
+            confidence=result.get("confidence", 0.0),
+            extracted_metadata=clean_metadata,
+            parsing_errors=errors
+        )
+        
+    except json.JSONDecodeError:
+        return self._handle_json_parsing_error(query, result_json)
+    except Exception as e:
+        return self._handle_general_error(query, str(e))
+```
+
+### Phase 6: API Integration
+**File:** `src/disney/api/routes.py`
+
+**New Endpoint:**
+```python
+@router.post("/query-enhanced", response_model=QueryResponse)
+async def query_reviews_enhanced(
+    request: QueryRequest,
+    chroma_host=Depends(get_chroma_host),
+    chroma_port=Depends(get_chroma_port)
+):
+    """Enhanced query endpoint with metadata extraction."""
+    # Use new query_with_metadata method
+    vector_manager = get_retrieval_manager(chroma_host, chroma_port)
+    answer = await vector_manager.query_with_metadata(request.question)
+    # ... rest of implementation
+```
+
+### Phase 7: Configuration and Testing
+**File:** `src/disney/shared/config.py`
+
+**New Settings:**
+```python
+class Settings(BaseSettings):
+    # ... existing settings
+    
+    # Query Parser Settings
+    query_parser_enabled: bool = True
+    query_parser_llm_model: str = "gpt-4o-mini"
+    query_parser_temperature: float = 0.1
+    query_parser_confidence_threshold: float = 0.7
+```
+
+**Test Files:**
+- `tests/test_rag/test_query_parser.py`
+- `tests/test_api/test_enhanced_routes.py`
+
+### Phase 8: Usage Examples and Documentation
+
+**Example Usage:**
+```python
+# Initialize with query parser
+parser = QueryParser(QueryParserConfig())
+manager = RetrievalManager(query_parser=parser)
+
+# Query with metadata extraction
+result = await manager.query_with_metadata(
+    "What do customers say about Space Mountain at Disneyland in 2023?"
+)
+# Automatically extracts: branch="Disneyland", year="2023"
+# Rewrites to: "Space Mountain customer reviews experiences"
+```
+
+**Example Queries:**
+1. "Show me 5-star reviews from Disney World in 2023"
+2. "What complaints do people have about food at Disneyland?"
+3. "Find reviews about wait times at Space Mountain"
+4. "Show me recent reviews about staff friendliness"
+
+## Implementation Steps
+
+### Step 1: Create Base Structure
+1. Create `src/disney/rag/query_parser.py`
+2. Add prompt template to `src/disney/rag/prompts.py`
+3. Update `src/disney/shared/config.py` with new settings
+
+### Step 2: Implement Core Logic
+1. Implement `QueryParser` class
+2. Add metadata validation logic
+3. Implement ChromaDB filter building
+
+### Step 3: Integration
+1. Update `RetrievalManager` with query parser integration
+2. Add new API endpoint
+3. Update existing query methods
+
+### Step 4: Testing
+1. Create comprehensive test suite
+2. Test edge cases and error handling
+3. Integration tests with real ChromaDB
+
+### Step 5: Documentation and Examples
+1. Add usage examples
+2. Update API documentation
+3. Create integration guide
+
+## Success Criteria
+1. ✅ Extract metadata from natural language queries
+2. ✅ Convert metadata to valid ChromaDB filters
+3. ✅ Rewrite queries for better semantic search
+4. ✅ Handle all edge cases gracefully
+5. ✅ Integrate seamlessly with existing RAG system
+6. ✅ Maintain backward compatibility
+7. ✅ Comprehensive test coverage
+8. ✅ Clear documentation and examples
+
+## Dependencies
+- Existing LangChain infrastructure
+- OpenAI API access
+- ChromaDB where clause support
+- Existing RetrievalManager architecture
+
+## Timeline
+- **Phase 1-2**: 2-3 hours (Base structure and prompts)
+- **Phase 3-4**: 3-4 hours (Core implementation and integration)
+- **Phase 5-6**: 2-3 hours (Edge cases and API)
+- **Phase 7-8**: 2-3 hours (Testing and documentation)
+- **Total**: 9-13 hours
+
+## Notes
+- Reuse existing LangChain patterns and infrastructure
+- Maintain backward compatibility with existing query methods
+- Focus on robust error handling and graceful degradation
+- Consider adding query parsing metrics and monitoring
+- Plan for future metadata field extensions

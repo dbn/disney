@@ -9,8 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain.schema import Document
+from unittest.mock import patch
 
-from disney.rag.ingestion import IngestionPipeline, IngestionConfig
+from disney.pipeline.ingest import DataIngester
 from disney.rag.document_processor import DocumentProcessorConfig
 
 
@@ -81,12 +82,8 @@ def sample_documents():
 def mock_vector_db():
     """Mock vector database for unit tests."""
     mock_db = AsyncMock()
-    mock_db.add_documents.return_value = {
-        'success': True,
-        'indexed_count': 2,
-        'processing_time_seconds': 1.5,
-        'indexing_rate': 1.33
-    }
+    # Mock the async add_documents method to return True
+    mock_db.add_documents = AsyncMock(return_value=True)
     mock_db.get_collection_stats.return_value = {
         'collection_name': 'test_collection',
         'document_count': 2,
@@ -98,15 +95,9 @@ def mock_vector_db():
 
 
 @pytest.fixture
-def ingestion_config():
-    """Default ingestion configuration for tests."""
-    return IngestionConfig(
-        batch_size=50,
-        chunk_size=200,
-        chunk_overlap=50,
-        collection_name="test_collection",
-        text_column="Review_Text"
-    )
+def data_ingester():
+    """Default data ingester for tests."""
+    return DataIngester(chroma_host="localhost", chroma_port=8000)
 
 
 @pytest.fixture
@@ -181,13 +172,17 @@ def temp_malformed_csv_file():
 
 
 @pytest.fixture
-def ingestion_pipeline(mock_vector_db, ingestion_config, doc_processor_config):
+def ingestion_pipeline(mock_vector_db, data_ingester, temp_csv_file):
     """Create an ingestion pipeline for testing."""
-    return IngestionPipeline(
-        vector_db=mock_vector_db,
-        config=ingestion_config,
-        doc_config=doc_processor_config
-    )
+    # Mock the retrieval manager for the data ingester
+    data_ingester.retrieval_manager = mock_vector_db
+    
+    # Mock the settings to use the temp CSV file
+    with patch('disney.pipeline.ingest.settings') as mock_settings:
+        mock_settings.data_path = temp_csv_file
+        mock_settings.chroma_host = "localhost"
+        mock_settings.chroma_port = 8000
+        yield data_ingester
 
 
 @pytest.fixture

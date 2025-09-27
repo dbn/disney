@@ -6,12 +6,13 @@ Test script for RAG-based ingestion functionality.
 import asyncio
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from disney.rag.document_processor import DocumentProcessor, DocumentProcessorConfig
-from disney.rag.ingestion import IngestionPipeline, IngestionConfig
+from disney.pipeline.ingest import DataIngester
 
 
 async def test_document_processor():
@@ -81,27 +82,21 @@ async def test_ingestion_pipeline():
     
     # Mock vector database for testing
     class MockVectorDB:
-        async def add_documents(self, collection_name, documents, metadatas, ids):
-            print(f"  📝 Mock: Would add {len(documents)} documents to collection '{collection_name}'")
-            return {'success': True, 'indexed_count': len(documents)}
+        async def add_documents(self, documents):
+            print(f"  📝 Mock: Would add {len(documents)} documents")
+            return True
         
-        async def get_collection_stats(self, collection_name):
-            return {'document_count': 100, 'collection_name': collection_name}
+        async def get_collection_stats(self):
+            return {'document_count': 100, 'collection_name': 'test_collection'}
     
-    # Create ingestion pipeline
+    # Create data ingester
     vector_db = MockVectorDB()
-    config = IngestionConfig(
-        batch_size=50,
-        collection_name="test_collection",
-        chunk_size=200,
-        chunk_overlap=50
-    )
-    
-    pipeline = IngestionPipeline(vector_db, config)
+    ingester = DataIngester(chroma_host="localhost", chroma_port=8000)
+    ingester.retrieval_manager = vector_db
     
     # Test CSV loading (using sample data)
     print("  📁 Testing CSV loader...")
-    csv_loader = pipeline.csv_loader
+    # DataIngester doesn't have a separate csv_loader, it loads data directly
     
     # Create a temporary CSV file for testing
     import tempfile
@@ -123,19 +118,16 @@ async def test_ingestion_pipeline():
         temp_file = f.name
     
     try:
-        # Load reviews
-        reviews = csv_loader.load_reviews(temp_file)
-        print(f"  ✅ Loaded {len(reviews)} reviews from CSV")
-        
-        # Process documents
-        documents = pipeline.document_processor.process_reviews_batch(reviews)
-        print(f"  ✅ Processed into {len(documents)} documents")
-        
-        # Test batch indexing
-        result = await pipeline.batch_indexer.index_documents_batch(
-            documents, "test_collection"
-        )
-        print(f"  ✅ Batch indexing result: {result}")
+        # Test the data ingester with the temp file
+        # We need to mock the data path for the ingester
+        with patch('disney.pipeline.ingest.settings') as mock_settings:
+            mock_settings.data_path = temp_file
+            mock_settings.chroma_host = "localhost"
+            mock_settings.chroma_port = 8000
+            
+            # Run the ingestion pipeline
+            result = await ingester.run_ingestion_pipeline()
+            print(f"  ✅ Ingestion result: {result}")
         
     finally:
         # Clean up temp file
