@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug API",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/debug_api_fixed.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "LOG_LEVEL": "DEBUG",
+                "CHROMA_HOST": "localhost",
+                "CHROMA_PORT": "8001"
+            },
+            "args": []
+        }
+    ]
+}

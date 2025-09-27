@@ -5,7 +5,7 @@ Implement a query parser component that uses LLM to extract metadata from user q
 
 ## Current State
 - Existing RAG system with RetrievalManager
-- Document ingestion with metadata: `rating`, `year`, `branch`, `original_index`
+- Document ingestion with metadata: `rating`, `year`, `month`, `branch`, `reviewer_location`, `original_index`
 - ChromaDB integration with collection-based isolation
 - LangChain-based query processing
 
@@ -49,8 +49,38 @@ class QueryParserConfig:
     enable_query_rewriting: bool = True
 ```
 
-### Phase 2: Implement Metadata Extraction Prompt
-**File:** `src/disney/rag/prompts.py` (extend existing)
+### Phase 2: Implement Structured Output with Pydantic Models
+**File:** `src/disney/rag/query_parser.py` (extend existing)
+
+**Pydantic Models for Structured Output:**
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
+
+class QueryFilters(BaseModel):
+    """ChromaDB filters extracted from user query."""
+    rating: Optional[int] = Field(None, ge=1, le=5, description="Customer rating (1-5)")
+    year: Optional[int] = Field(None, ge=2000, le=2030, description="Review year")
+    month: Optional[int] = Field(None, ge=1, le=12, description="Review month (1-12)")
+    branch: Optional[str] = Field(None, description="Disney location: Disneyland, Disney World, or Unknown")
+    reviewer_location: Optional[str] = Field(None, description="Reviewer's location")
+
+class QueryParseResult(BaseModel):
+    """Structured result from query parsing."""
+    search_query: str = Field(..., description="Rewritten semantic query for better search")
+    filters: QueryFilters = Field(default_factory=QueryFilters, description="Extracted metadata filters")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in extraction (0.0-1.0)")
+    reasoning: str = Field(..., description="Brief explanation of extraction")
+
+class QueryParserConfig(BaseModel):
+    """Configuration for query parser."""
+    llm_model: str = Field(default="gpt-4o-mini", description="LLM model to use")
+    temperature: float = Field(default=0.1, ge=0.0, le=2.0, description="LLM temperature")
+    max_tokens: int = Field(default=500, ge=100, le=2000, description="Maximum tokens")
+    confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Minimum confidence threshold")
+    enable_metadata_extraction: bool = Field(default=True, description="Enable metadata extraction")
+    enable_query_rewriting: bool = Field(default=True, description="Enable query rewriting")
+```
 
 **Prompt Template:**
 ```python
@@ -59,41 +89,40 @@ You are a query parser for a Disney customer review analysis system. Extract met
 
 Available metadata fields:
 - rating: Integer (1-5) - Customer rating
-- year: String (e.g., "2023", "2022") - Review year
+- year: Integer (e.g., 2023, 2022) - Review year
+- month: Integer (1-12) - Review month
 - branch: String ("Disneyland", "Disney World", "Unknown") - Disney location
+- reviewer_location: String - Reviewer's location
 - original_index: Integer - Original review index
 
 User Query: "{query}"
 
-Extract metadata and rewrite the query. Return ONLY a valid JSON object with this exact structure:
-{{
-    "search_query": "rewritten semantic query for better search",
-    "filters": {{
-        "rating": 5,  // if rating mentioned (1-5)
-        "year": "2023",  // if year mentioned
-        "branch": "Disneyland"  // if location mentioned
-    }},
-    "confidence": 0.85,  // confidence in extraction (0.0-1.0)
-    "reasoning": "Brief explanation of extraction"
-}}
-
-Rules:
+Extract metadata and rewrite the query following these rules:
 1. Only include filters for explicitly mentioned metadata
-2. If no metadata is mentioned, return empty filters: {{}}
-3. For ratings, extract the specific number mentioned
-4. For years, extract 4-digit year format
-5. For branches, use exact values: "Disneyland", "Disney World", or "Unknown"
-6. Rewrite search_query to be more semantic and searchable
-7. Set confidence based on how clear the metadata extraction is
-8. Return ONLY the JSON, no other text
+2. If no metadata is mentioned, leave filters empty
+3. For ratings, extract the specific number mentioned (1-5)
+4. For years, extract 4-digit year format (e.g., 2023)
+5. For months, extract month number (1-12)
+6. For branches, use exact values: "Disneyland", "Disney World", or "Unknown"
+7. For reviewer locations, extract the mentioned location
+8. Rewrite search_query to be more semantic and searchable
+9. Set confidence based on how clear the metadata extraction is
+10. Provide brief reasoning for your extraction
+
+Return the result in the specified structured format.
 """
 ```
 
-### Phase 3: Implement Core Query Parser
+### Phase 3: Implement Core Query Parser with Structured Output
 **File:** `src/disney/rag/query_parser.py`
 
 **Key Methods:**
 ```python
+from langchain_openai import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.runnables import RunnablePassthrough
+
 class QueryParser:
     def __init__(self, config: QueryParserConfig):
         self.config = config
@@ -103,19 +132,66 @@ class QueryParser:
             max_tokens=config.max_tokens
         )
         self.prompt_template = ChatPromptTemplate.from_template(METADATA_EXTRACTION_PROMPT)
-        self.chain = self.prompt_template | self.llm | StrOutputParser()
+        
+        # Use PydanticOutputParser for structured output
+        self.output_parser = PydanticOutputParser(pydantic_object=QueryParseResult)
+        
+        # Create the chain with structured output
+        self.chain = (
+            self.prompt_template 
+            | self.llm 
+            | self.output_parser
+        )
     
     async def parse_query(self, query: str) -> QueryParseResult:
-        """Parse user query and extract metadata."""
+        """Parse user query and extract metadata using structured output."""
+        if not query or not query.strip():
+            return QueryParseResult(
+                search_query="",
+                filters=QueryFilters(),
+                confidence=0.0,
+                reasoning="Empty query provided"
+            )
         
-    def _validate_extracted_metadata(self, metadata: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
-        """Validate and clean extracted metadata."""
+        try:
+            # Use structured output parsing
+            result = await self.chain.ainvoke({"query": query.strip()})
+            
+            # Validate confidence threshold
+            if result.confidence < self.config.confidence_threshold:
+                logger.warning(f"Low confidence parsing: {result.confidence}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Query parsing failed: {e}")
+            return self._handle_parsing_error(query, str(e))
+    
+    def _build_chromadb_filters(self, filters: QueryFilters) -> Dict[str, Any]:
+        """Convert Pydantic filters to ChromaDB where clause format."""
+        chromadb_filters = {}
         
-    def _build_chromadb_filters(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert metadata to ChromaDB where clause format."""
-        
-    def _handle_parsing_errors(self, result: Dict[str, Any]) -> QueryParseResult:
+        if filters.rating is not None:
+            chromadb_filters["rating"] = filters.rating
+        if filters.year is not None:
+            chromadb_filters["year"] = filters.year
+        if filters.month is not None:
+            chromadb_filters["month"] = filters.month
+        if filters.branch is not None:
+            chromadb_filters["branch"] = filters.branch
+        if filters.reviewer_location is not None:
+            chromadb_filters["reviewer_location"] = filters.reviewer_location
+            
+        return chromadb_filters
+    
+    def _handle_parsing_error(self, query: str, error: str) -> QueryParseResult:
         """Handle cases where LLM parsing fails."""
+        return QueryParseResult(
+            search_query=query,
+            filters=QueryFilters(),
+            confidence=0.0,
+            reasoning=f"Parsing failed: {error}"
+        )
 ```
 
 ### Phase 4: Integrate with RetrievalManager
@@ -126,20 +202,23 @@ class QueryParser:
 class RetrievalManager:
     def __init__(self, ..., query_parser: Optional[QueryParser] = None):
         # ... existing init
-        self.query_parser = query_parser or QueryParser()
+        self.query_parser = query_parser or QueryParser(QueryParserConfig())
     
     async def query_with_metadata(self, query: str) -> str:
         """Enhanced query method with metadata extraction."""
         # Parse query for metadata
         parse_result = await self.query_parser.parse_query(query)
         
+        # Build ChromaDB filters from structured result
+        chromadb_filters = self.query_parser._build_chromadb_filters(parse_result.filters)
+        
         # Use metadata filters if available
-        if parse_result.filters:
+        if chromadb_filters:
             # Use filtered search
             docs = self.vectorstore.similarity_search_with_score(
                 parse_result.search_query,
                 k=5,
-                filter=parse_result.filters
+                filter=chromadb_filters
             )
         else:
             # Use regular search
@@ -158,9 +237,30 @@ class RetrievalManager:
         use_metadata_extraction: bool = True
     ) -> List[Dict[str, Any]]:
         """Enhanced context retrieval with metadata filtering."""
+        if not use_metadata_extraction or not self.query_parser:
+            return self.get_relevant_context(query, n_results)
+        
+        # Parse query for metadata
+        parse_result = await self.query_parser.parse_query(query)
+        chromadb_filters = self.query_parser._build_chromadb_filters(parse_result.filters)
+        
+        # Use filtered search if metadata available
+        if chromadb_filters:
+            docs = self.vectorstore.similarity_search_with_score(
+                parse_result.search_query,
+                k=n_results,
+                filter=chromadb_filters
+            )
+        else:
+            docs = self.vectorstore.similarity_search_with_score(
+                parse_result.search_query,
+                k=n_results
+            )
+        
+        return self._format_context_documents(docs)
 ```
 
-### Phase 5: Edge Case Handling
+### Phase 5: Edge Case Handling with Structured Output
 **File:** `src/disney/rag/query_parser.py`
 
 **Edge Cases:**
@@ -169,48 +269,55 @@ class RetrievalManager:
 3. **LLM parsing failure**: Use original query, return error details
 4. **Confidence too low**: Use original query, log warning
 5. **Empty query**: Return error result
-6. **Malformed JSON**: Retry with simplified prompt
+6. **Pydantic validation errors**: Handle gracefully with fallback
 
 **Implementation:**
 ```python
 async def parse_query(self, query: str) -> QueryParseResult:
-    """Parse user query with comprehensive error handling."""
+    """Parse user query with comprehensive error handling using structured output."""
     if not query or not query.strip():
         return QueryParseResult(
-            original_query=query,
             search_query="",
-            filters={},
+            filters=QueryFilters(),
             confidence=0.0,
-            extracted_metadata={},
-            parsing_errors=["Empty query provided"]
+            reasoning="Empty query provided"
         )
     
     try:
-        # Attempt LLM parsing
-        result_json = await self.chain.ainvoke({"query": query.strip()})
-        result = json.loads(result_json)
+        # Use structured output parsing (handles validation automatically)
+        result = await self.chain.ainvoke({"query": query.strip()})
         
-        # Validate and clean metadata
-        clean_metadata, errors = self._validate_extracted_metadata(
-            result.get("filters", {})
-        )
+        # Validate confidence threshold
+        if result.confidence < self.config.confidence_threshold:
+            logger.warning(f"Low confidence parsing: {result.confidence}")
+            # Still return result but with warning
         
-        # Build ChromaDB filters
-        chromadb_filters = self._build_chromadb_filters(clean_metadata)
+        return result
         
-        return QueryParseResult(
-            original_query=query,
-            search_query=result.get("search_query", query),
-            filters=chromadb_filters,
-            confidence=result.get("confidence", 0.0),
-            extracted_metadata=clean_metadata,
-            parsing_errors=errors
-        )
-        
-    except json.JSONDecodeError:
-        return self._handle_json_parsing_error(query, result_json)
+    except ValidationError as e:
+        logger.error(f"Pydantic validation error: {e}")
+        return self._handle_validation_error(query, str(e))
     except Exception as e:
-        return self._handle_general_error(query, str(e))
+        logger.error(f"Query parsing failed: {e}")
+        return self._handle_parsing_error(query, str(e))
+
+def _handle_validation_error(self, query: str, error: str) -> QueryParseResult:
+    """Handle Pydantic validation errors."""
+    return QueryParseResult(
+        search_query=query,
+        filters=QueryFilters(),
+        confidence=0.0,
+        reasoning=f"Validation error: {error}"
+    )
+
+def _handle_parsing_error(self, query: str, error: str) -> QueryParseResult:
+    """Handle general parsing errors."""
+    return QueryParseResult(
+        search_query=query,
+        filters=QueryFilters(),
+        confidence=0.0,
+        reasoning=f"Parsing failed: {error}"
+    )
 ```
 
 ### Phase 6: API Integration
@@ -225,10 +332,37 @@ async def query_reviews_enhanced(
     chroma_port=Depends(get_chroma_port)
 ):
     """Enhanced query endpoint with metadata extraction."""
-    # Use new query_with_metadata method
-    vector_manager = get_retrieval_manager(chroma_host, chroma_port)
-    answer = await vector_manager.query_with_metadata(request.question)
-    # ... rest of implementation
+    start_time = time.time()
+    
+    try:
+        logger.info(f"Processing enhanced query: {request.question[:100]}...")
+        
+        # Initialize RAG components with query parser
+        vector_manager = get_retrieval_manager(chroma_host, chroma_port)
+        
+        # Use enhanced query method with metadata extraction
+        answer = await vector_manager.query_with_metadata(request.question)
+        
+        # Get enhanced context for sources
+        context_docs = vector_manager.get_enhanced_context(
+            query=request.question,
+            n_results=request.context_limit,
+            use_metadata_extraction=True
+        )
+        
+        # Format response
+        processing_time = (time.time() - start_time) * 1000
+        
+        return QueryResponse(
+            answer=answer,
+            sources=context_docs,
+            confidence=0.85,  # Could be extracted from parse result
+            processing_time_ms=processing_time
+        )
+        
+    except Exception as e:
+        logger.error(f"Enhanced query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 ```
 
 ### Phase 7: Configuration and Testing
@@ -240,10 +374,11 @@ class Settings(BaseSettings):
     # ... existing settings
     
     # Query Parser Settings
-    query_parser_enabled: bool = True
-    query_parser_llm_model: str = "gpt-4o-mini"
-    query_parser_temperature: float = 0.1
-    query_parser_confidence_threshold: float = 0.7
+    query_parser_enabled: bool = Field(default=True, env="QUERY_PARSER_ENABLED")
+    query_parser_llm_model: str = Field(default="gpt-4o-mini", env="QUERY_PARSER_LLM_MODEL")
+    query_parser_temperature: float = Field(default=0.1, env="QUERY_PARSER_TEMPERATURE")
+    query_parser_confidence_threshold: float = Field(default=0.7, env="QUERY_PARSER_CONFIDENCE_THRESHOLD")
+    query_parser_max_tokens: int = Field(default=500, env="QUERY_PARSER_MAX_TOKENS")
 ```
 
 **Test Files:**
@@ -255,34 +390,36 @@ class Settings(BaseSettings):
 **Example Usage:**
 ```python
 # Initialize with query parser
-parser = QueryParser(QueryParserConfig())
+config = QueryParserConfig()
+parser = QueryParser(config)
 manager = RetrievalManager(query_parser=parser)
 
 # Query with metadata extraction
 result = await manager.query_with_metadata(
-    "What do customers say about Space Mountain at Disneyland in 2023?"
+    "What do customers say about Space Mountain at Disneyland in June 2023?"
 )
-# Automatically extracts: branch="Disneyland", year="2023"
+# Automatically extracts: branch="Disneyland", year=2023, month=6
 # Rewrites to: "Space Mountain customer reviews experiences"
 ```
 
 **Example Queries:**
-1. "Show me 5-star reviews from Disney World in 2023"
-2. "What complaints do people have about food at Disneyland?"
-3. "Find reviews about wait times at Space Mountain"
-4. "Show me recent reviews about staff friendliness"
+1. "Show me 5-star reviews from Disney World in December 2023"
+2. "What complaints do people have about food at Disneyland in summer?"
+3. "Find reviews about wait times at Space Mountain from US visitors"
+4. "Show me recent reviews about staff friendliness in 2023"
+5. "What do people think about the new attraction in March?"
 
 ## Implementation Steps
 
 ### Step 1: Create Base Structure
 1. Create `src/disney/rag/query_parser.py`
-2. Add prompt template to `src/disney/rag/prompts.py`
+2. Add prompt template to `src/disney/rag/prompt_template.py`
 3. Update `src/disney/shared/config.py` with new settings
 
 ### Step 2: Implement Core Logic
-1. Implement `QueryParser` class
-2. Add metadata validation logic
-3. Implement ChromaDB filter building
+1. Implement `QueryParser` class with Pydantic models
+2. Add structured output parsing with LangChain
+3. Implement ChromaDB filter building from Pydantic models
 
 ### Step 3: Integration
 1. Update `RetrievalManager` with query parser integration
@@ -290,9 +427,9 @@ result = await manager.query_with_metadata(
 3. Update existing query methods
 
 ### Step 4: Testing
-1. Create comprehensive test suite
-2. Test edge cases and error handling
-3. Integration tests with real ChromaDB
+1. Create comprehensive test suite for Pydantic models
+2. Test structured output parsing and validation
+3. Integration tests with real ChromaDB and metadata filtering
 
 ### Step 5: Documentation and Examples
 1. Add usage examples
@@ -311,9 +448,11 @@ result = await manager.query_with_metadata(
 
 ## Dependencies
 - Existing LangChain infrastructure
+- LangChain PydanticOutputParser for structured output
 - OpenAI API access
 - ChromaDB where clause support
 - Existing RetrievalManager architecture
+- Pydantic for data validation and serialization
 
 ## Timeline
 - **Phase 1-2**: 2-3 hours (Base structure and prompts)
@@ -323,8 +462,10 @@ result = await manager.query_with_metadata(
 - **Total**: 9-13 hours
 
 ## Notes
-- Reuse existing LangChain patterns and infrastructure
+- Use LangChain PydanticOutputParser for reliable structured output
 - Maintain backward compatibility with existing query methods
 - Focus on robust error handling and graceful degradation
+- Leverage Pydantic validation for data integrity
 - Consider adding query parsing metrics and monitoring
 - Plan for future metadata field extensions
+- Structured output eliminates JSON parsing errors and improves reliability

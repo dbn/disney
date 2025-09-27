@@ -53,7 +53,7 @@ class MetadataExtractor:
         Returns:
             Extracted year, or None if invalid
         """
-        if not year_month or year_month == 'nan':
+        if not year_month or year_month == 'nan' or year_month.lower() == 'missing':
             return None
         
         try:
@@ -83,7 +83,7 @@ class MetadataExtractor:
         Returns:
             Extracted month (1-12), or None if invalid
         """
-        if not year_month or year_month == 'nan':
+        if not year_month or year_month == 'nan' or year_month.lower() == 'missing':
             return None
         
         try:

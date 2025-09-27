@@ -1,0 +1,156 @@
+# RetrievalManager Caching Implementation Plan
+
+## Overview
+Implement FastAPI dependency injection caching for RetrievalManager to avoid expensive re-initialization on every request. This will significantly improve API performance by reusing the same RetrievalManager instance across all requests.
+
+## Problem Statement
+Currently, RetrievalManager is being created fresh on every API request, which involves:
+- Initializing ChromaDB client connections
+- Loading embedding models (HuggingFace)
+- Initializing LLM models (OpenAI)
+- Creating vector store connections
+- Setting up RAG chains
+
+This is expensive and unnecessary since the configuration doesn't change between requests.
+
+## Solution: FastAPI Dependency Injection Caching
+
+### 1. Update Dependencies File
+**File:** `src/disney/api/dependencies.py`
+
+**Changes:**
+- Add RetrievalManager import
+- Create global cache variable for singleton pattern
+- Implement `get_retrieval_manager()` dependency function
+- Add utility functions for cache management
+
+**New Functions:**
+```python
+def get_retrieval_manager() -> RetrievalManager
+def reset_retrieval_manager()
+def get_retrieval_manager_stats() -> dict
+```
+
+### 2. Update Routes File
+**File:** `src/disney/api/routes.py`
+
+**Changes:**
+- Remove manual RetrievalManager creation from all routes
+- Replace with FastAPI dependency injection: `vector_manager: RetrievalManager = Depends(get_retrieval_manager)`
+- Remove chroma_host and chroma_port parameters from route functions
+- Simplify route logic by using cached instance
+
+**Routes to Update:**
+- `query_reviews()` - Line 21
+- `health_check()` - Line 79  
+- `query_reviews_enhanced()` - Line 155
+
+### 3. Add Cache Management Endpoint
+**New Endpoint:** `GET /cache-status`
+- Provides visibility into cache state
+- Useful for debugging and monitoring
+- Returns cache statistics
+
+## Implementation Steps
+
+### Step 1: Update Dependencies
+1. Add RetrievalManager import to dependencies.py
+2. Create global cache variable
+3. Implement singleton get_retrieval_manager() function
+4. Add cache management utilities
+
+### Step 2: Update Route Functions
+1. Remove manual RetrievalManager instantiation
+2. Add dependency injection parameters
+3. Update function signatures to remove chroma_host/chroma_port
+4. Test each route individually
+
+### Step 3: Add Monitoring
+1. Add cache-status endpoint
+2. Add logging for cache hits/misses
+3. Add performance metrics
+
+### Step 4: Testing
+1. Test that same instance is reused across requests
+2. Verify performance improvement
+3. Test cache reset functionality
+4. Verify all routes work correctly
+
+## Expected Benefits
+
+### Performance Improvements
+- **Faster Response Times**: Eliminate ~2-3 seconds of initialization per request
+- **Reduced Memory Usage**: Single instance instead of multiple instances
+- **Better Resource Utilization**: Reuse expensive model loads
+
+### Code Quality Improvements
+- **Cleaner Routes**: Simplified route functions
+- **Better Separation of Concerns**: Dependencies handled by FastAPI
+- **Easier Testing**: Can easily mock the dependency
+- **More Maintainable**: Centralized RetrievalManager management
+
+## Technical Details
+
+### Caching Strategy
+- **Singleton Pattern**: One instance per application lifecycle
+- **Lazy Initialization**: Created on first request
+- **Thread-Safe**: FastAPI handles concurrency
+- **Memory Efficient**: No duplicate instances
+
+### Error Handling
+- Graceful fallback if cache fails
+- Proper logging for debugging
+- Cache reset capability for recovery
+
+### Monitoring
+- Cache hit/miss logging
+- Performance metrics
+- Health check integration
+
+## Files to Modify
+
+1. `src/disney/api/dependencies.py` - Add caching logic
+2. `src/disney/api/routes.py` - Update all routes to use dependency injection
+3. `src/disney/api/models.py` - Add cache status model (optional)
+
+## Testing Checklist
+
+- [ ] First request creates RetrievalManager instance
+- [ ] Subsequent requests reuse cached instance
+- [ ] All routes work with dependency injection
+- [ ] Health check works correctly
+- [ ] Cache status endpoint returns correct info
+- [ ] Performance improvement is measurable
+- [ ] Error handling works properly
+- [ ] Cache reset functionality works
+
+## Rollback Plan
+
+If issues arise:
+1. Revert routes.py to manual RetrievalManager creation
+2. Remove caching from dependencies.py
+3. Restore original route signatures
+4. Test that everything works as before
+
+## Success Metrics
+
+- **Response Time**: Reduce average response time by 2-3 seconds
+- **Memory Usage**: Reduce memory footprint per request
+- **Code Quality**: Cleaner, more maintainable route functions
+- **Reliability**: No functional regressions
+
+## Timeline
+
+- **Step 1**: 30 minutes - Update dependencies
+- **Step 2**: 45 minutes - Update routes
+- **Step 3**: 15 minutes - Add monitoring
+- **Step 4**: 30 minutes - Testing
+- **Total**: ~2 hours
+
+## Notes
+
+- This is a non-breaking change - API interface remains the same
+- Can be implemented incrementally (one route at a time)
+- Easy to rollback if needed
+- Follows FastAPI best practices
+- Improves both performance and code quality

@@ -82,6 +82,28 @@ class Settings(BaseSettings):
         env="ENABLE_STREAMING"
     )
     
+    # Query Parser Settings
+    query_parser_enabled: bool = Field(
+        default=True,
+        env="QUERY_PARSER_ENABLED"
+    )
+    query_parser_llm_model: str = Field(
+        default="gpt-4o-mini",
+        env="QUERY_PARSER_LLM_MODEL"
+    )
+    query_parser_temperature: float = Field(
+        default=0.1,
+        env="QUERY_PARSER_TEMPERATURE"
+    )
+    query_parser_confidence_threshold: float = Field(
+        default=0.7,
+        env="QUERY_PARSER_CONFIDENCE_THRESHOLD"
+    )
+    query_parser_max_tokens: int = Field(
+        default=500,
+        env="QUERY_PARSER_MAX_TOKENS"
+    )
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

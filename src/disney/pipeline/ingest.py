@@ -107,7 +107,7 @@ class DataIngester:
     async def index_documents(
         self, 
         documents: List[Dict[str, Any]], 
-        batch_size: int = 100
+        batch_size: int = 10
     ) -> Dict[str, Any]:
         """Index documents using direct ChromaDB integration.
 
@@ -168,7 +168,7 @@ class DataIngester:
 
     async def run_ingestion_pipeline(
         self, 
-        batch_size: int = 100
+        batch_size: int = 10
     ) -> Dict[str, Any]:
         """Run the complete ingestion pipeline.
 

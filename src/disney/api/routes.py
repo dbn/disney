@@ -8,8 +8,8 @@ from fastapi.responses import JSONResponse
 
 from .models import QueryRequest, QueryResponse, HealthResponse, ErrorResponse, SourceDocument
 from ..shared.logging import setup_logging
-from ..rag.retrieval_manager import get_retrieval_manager
-from .dependencies import get_http_client, get_chroma_host, get_chroma_port
+from ..rag.retrieval_manager import RetrievalManager
+from .dependencies import get_http_client, get_retrieval_manager, get_retrieval_manager_stats
 
 # Set up logging
 logger = setup_logging("customer-experience-api")
@@ -21,9 +21,7 @@ router = APIRouter()
 @router.post("/query", response_model=QueryResponse)
 async def query_reviews(
     request: QueryRequest,
-    
-    chroma_host=Depends(get_chroma_host),
-    chroma_port=Depends(get_chroma_port)
+    vector_manager: RetrievalManager = Depends(get_retrieval_manager)
 ):
     """Submit a question and get LLM result back."""
     start_time = time.time()
@@ -31,25 +29,12 @@ async def query_reviews(
     try:
         logger.info(f"Processing query: {request.question[:100]}...")
         
-        # Initialize RAG components
-        vector_manager = get_retrieval_manager(chroma_host, chroma_port)
-        
-        # Use the new chain-based query method
-        logger.info("Processing query with RAG chain...")
-        answer = await vector_manager.query(request.question)
-        
-        # Get sources for context (optional - for backward compatibility)
-        logger.info("Retrieving sources for context...")
-        context_docs = vector_manager.get_relevant_context(
-            query=request.question,
-            n_results=request.context_limit,
-            similarity_threshold=0.7,
-            max_context_length=4000
-        )
+        # Use the cached RetrievalManager instance
+        result = await vector_manager.query(request.question)
         
         # Format response
         sources = []
-        for doc in context_docs:
+        for doc in result["context"][:request.context_limit]:
             sources.append(SourceDocument(
                 review_id=doc.get("id", "unknown"),
                 relevance_score=doc.get("relevance_score", 0.0),
@@ -62,9 +47,9 @@ async def query_reviews(
         logger.info(f"Query processed successfully in {processing_time_ms:.2f}ms")
         
         return QueryResponse(
-            answer=answer,
+            answer=result["answer"],
             sources=sources,
-            confidence=0.8,  # Default confidence for chain-based approach
+            confidence=0.8,
             processing_time_ms=processing_time_ms
         )
         
@@ -78,16 +63,14 @@ async def query_reviews(
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(
-    chroma_host=Depends(get_chroma_host),
-    chroma_port=Depends(get_chroma_port)
+    vector_manager: RetrievalManager = Depends(get_retrieval_manager)
 ):
     """Health check endpoint."""
     try:
         dependencies = {}
         
-        # Check ChromaDB Service (direct connection)
+        # Check ChromaDB Service using cached instance
         try:
-            vector_manager = get_retrieval_manager(chroma_host, chroma_port)
             stats = vector_manager.get_collection_stats()
             if stats and stats.get("document_count", 0) >= 0:
                 dependencies["chromadb"] = "healthy"
@@ -97,14 +80,8 @@ async def health_check(
             logger.warning(f"ChromaDB health check failed: {str(e)}")
             dependencies["chromadb"] = "unhealthy"
         
-        # Check LLM service (OpenAI) - now handled by RetrievalManager
-        try:
-            # Test if we can create a vector manager (which initializes LLM)
-            test_manager = get_retrieval_manager(chroma_host, chroma_port)
-            dependencies["llm_service"] = "healthy" if test_manager else "unhealthy"
-        except Exception as e:
-            logger.warning(f"LLM service health check failed: {str(e)}")
-            dependencies["llm_service"] = "unhealthy"
+        # Check LLM service (already initialized in RetrievalManager)
+        dependencies["llm_service"] = "healthy" if vector_manager else "unhealthy"
         
         # Overall health status
         overall_status = "healthy" if all(
@@ -150,3 +127,4 @@ async def get_status():
             status_code=500,
             detail=f"Status check failed: {str(e)}"
         )
+
